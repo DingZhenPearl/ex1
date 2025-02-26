@@ -9,6 +9,7 @@
 	// Turn off tsc task auto detection since we have the necessary tasks as npm scripts
 	"typescript.tsc.autoDetect": "on",
 	"cmake.cmakePath": "D:/Microsoft VS Code/projects/web/html1/ex1/cmake-3.31.5-windows-x86_64/bin/cmake.exe",
-	"cmake.sourceDirectory": "D:/Microsoft VS Code/projects/web/html1/ex1/vcpkg/ports/7zip"
+	"cmake.sourceDirectory": "D:/Microsoft VS Code/projects/web/html1/ex1/vcpkg/ports/7zip",
+	"git.ignoreLimitWarning": true
 
 }
