@@ -1,0 +1,10 @@
+{
+  "compilerPath": "g++",
+  "includePaths": [
+    "D:\\Microsoft VS Code\\projects\\web\\html1\\ex1\\include",
+    "D:\\Microsoft VS Code\\projects\\web\\html1\\ex1\\lib"
+  ],
+  "compilerArgs": [
+    "-std=c++11"
+  ]
+}
