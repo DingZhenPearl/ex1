@@ -23,17 +23,35 @@ export function activate(context: vscode.ExtensionContext) {
         treeView.onDidChangeSelection(event => {
             if (event.selection.length > 0) {
                 const selectedProblem = event.selection[0] as Problem;
+                problemProvider.setCurrentProblemId(selectedProblem.id);
                 sidebarViewProvider.updateProblem(selectedProblem);
+                
+                // When selecting a problem, also sync any active editor content
+                const activeEditor = vscode.window.activeTextEditor;
+                if (activeEditor) {
+                    const code = activeEditor.document.getText();
+                    sidebarViewProvider.updateCode(code);
+                }
             }
         })
     );
 
-    // Listen for text document changes
+    // Listen for text document changes in the active editor
     context.subscriptions.push(
         vscode.workspace.onDidChangeTextDocument(event => {
             const activeEditor = vscode.window.activeTextEditor;
             if (activeEditor && event.document === activeEditor.document) {
                 const code = event.document.getText();
+                sidebarViewProvider.updateCode(code);
+            }
+        })
+    );
+
+    // Listen for active editor changes
+    context.subscriptions.push(
+        vscode.window.onDidChangeActiveTextEditor(editor => {
+            if (editor) {
+                const code = editor.document.getText();
                 sidebarViewProvider.updateCode(code);
             }
         })
@@ -79,8 +97,15 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                         }
                         break;
                     case 'ready':
+                        // Sync initial state when webview is ready
                         if (this._currentProblem) {
                             this.updateProblem(this._currentProblem);
+                        }
+                        // Sync code from active editor if available
+                        const activeEditor = vscode.window.activeTextEditor;
+                        if (activeEditor) {
+                            const code = activeEditor.document.getText();
+                            this.updateCode(code);
                         }
                         break;
                 }
@@ -112,19 +137,17 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
         }
     }
 
-    // extension.ts - 更新updateProblem方法
     public async updateProblem(problem: Problem) {
         this._currentProblem = problem;
         await this._sendMessageToWebview({
             command: 'updateProblem',
             id: problem.id,
             title: problem.label,
-            description: problem.fullDescription, // 使用完整描述
+            description: problem.fullDescription,
             difficulty: problem.difficulty,
             template: await this._getCodeTemplate(problem.id)
         });
     }
-
 
     private async _getCodeTemplate(problemId: string): Promise<string> {
         const templates: Record<string, string> = {
@@ -153,7 +176,7 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
             
             return 0;
         }`,
-                '2': `#include <iostream>
+            '2': `#include <iostream>
         #include <string>
         using namespace std;
         
@@ -169,10 +192,11 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
             
             return 0;
         }`,
-            };
+        };
         
-            return templates[problemId] || '';
-        }
+        return templates[problemId] || '';
+    }
+    
     private _getWebviewContent() {
         return `<!DOCTYPE html>
         <html lang="en">
@@ -292,7 +316,7 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
             </div>
             
             <div class="editor-container">
-                <textarea id="code-editor" spellcheck="false" placeholder="Write your code here..."></textarea>
+                <textarea id="code-editor" spellcheck="false" placeholder="Code from your active editor will appear here..."></textarea>
             </div>
             
             <div class="controls-container">
@@ -322,21 +346,24 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                             document.getElementById('problem-description').textContent = message.description;
                             document.getElementById('problem-difficulty').textContent = message.difficulty;
                             
+                            // Only update editor with template if no code is currently shown
                             const editor = document.getElementById('code-editor');
-                            editor.value = message.template || '';
-
-
-
-    
-
-                            
-                            // Save initial state
-                            vscode.setState({ code: editor.value });
+                            if (!editor.value.trim()) {
+                                editor.value = message.template || '';
+                                vscode.setState({ code: editor.value });
+                            }
                             
                             // Reset validation result
                             const resultDiv = document.getElementById('validation-result');
                             resultDiv.className = 'result-container';
                             resultDiv.textContent = '';
+                            break;
+                            
+                        case 'updateCode':
+                            // Update the code from the active editor
+                            const codeEditor = document.getElementById('code-editor');
+                            codeEditor.value = message.code;
+                            vscode.setState({ code: message.code });
                             break;
                             
                         case 'validationResult':
@@ -367,45 +394,8 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                         code: code
                     });
                 }
-
-                // Handle code editor changes
-                document.getElementById('code-editor').addEventListener('input', function(e) {
-                    vscode.setState({ code: this.value });
-                });
-
-                // Add Tab key support
-                document.getElementById('code-editor').addEventListener('keydown', function(e) {
-                    if (e.key === 'Tab') {
-                        e.preventDefault();
-                        const start = this.selectionStart;
-                        const end = this.selectionEnd;
-                        
-                        // Insert 4 spaces
-                        this.value = this.value.substring(0, start) + '    ' + this.value.substring(end);
-                        
-                        // Put caret at right position
-                        this.selectionStart = this.selectionEnd = start + 4;
-                        
-                        // Save state
-                        vscode.setState({ code: this.value });
-                    }
-                });
             </script>
         </body>
         </html>`;
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 }
