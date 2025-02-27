@@ -153,7 +153,7 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
         const templates: Record<string, string> = {
             '1': `#include <iostream>
         #include <vector>
-        #include "../lib/json.hpp"
+        #include <nlohmann/json.hpp>
         using namespace std;
         using json = nlohmann::json;
         

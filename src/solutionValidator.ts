@@ -18,11 +18,12 @@ export class SolutionValidator {
         try {
             const userCodePath = path.join(this.tempDir, 'solution.cpp');
             const execPath = path.join(this.tempDir, 'solution' + (os.platform() === 'win32' ? '.exe' : ''));
-            const libPath = path.join(this.extensionPath, 'lib');
+            const libPath = path.join(this.extensionPath, 'nlohmann');
             console.log('Compiling with lib path:', libPath);
             // Modify include path in code
+            // 使用正则表达式匹配 #include <nlohmann/json.hpp>，忽略大小写
             const modifiedCode = code.replace(
-                '#include "../lib/json.hpp"',
+                /#include\s+<nlohmann\/json\.hpp>/i,
                 `#include "${path.join(libPath, 'json.hpp').replace(/\\/g, '/')}"`
             );
 
