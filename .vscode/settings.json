@@ -10,6 +10,7 @@
 	"typescript.tsc.autoDetect": "on",
 	"cmake.cmakePath": "${workspaceFolder}/cmake-3.31.5-windows-x86_64/bin/cmake.exe",
 	"cmake.sourceDirectory": "${workspaceFolder}/vcpkg/ports/7zip",
-	"git.ignoreLimitWarning": true
+	"git.ignoreLimitWarning": true,
+	"cmake.ignoreCMakeListsMissing": true
 
 }

@@ -27,11 +27,23 @@ export function activate(context: vscode.ExtensionContext) {
             }
         })
     );
+
+    // Listen for text document changes
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeTextDocument(event => {
+            const activeEditor = vscode.window.activeTextEditor;
+            if (activeEditor && event.document === activeEditor.document) {
+                const code = event.document.getText();
+                sidebarViewProvider.updateCode(code);
+            }
+        })
+    );
 }
 
 class SidebarViewProvider implements vscode.WebviewViewProvider {
     private _view?: vscode.WebviewView;
     private _currentProblem?: Problem;
+    private _currentCode?: string;
 
     constructor(private readonly _extensionUri: vscode.Uri) {}
 
@@ -57,7 +69,8 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                 switch (message.command) {
                     case 'submit':
                         if (this._currentProblem) {
-                            const validator = new SolutionValidator(this._extensionUri.fsPath);                            const result = await validator.validate(this._currentProblem.id, message.code);
+                            const validator = new SolutionValidator(this._extensionUri.fsPath);
+                            const result = await validator.validate(this._currentProblem.id, message.code);
                             await this._sendMessageToWebview({
                                 command: 'validationResult',
                                 success: result.success,
@@ -81,6 +94,14 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
         });
     }
 
+    public async updateCode(code: string) {
+        this._currentCode = code;
+        await this._sendMessageToWebview({
+            command: 'updateCode',
+            code: code
+        });
+    }
+
     private async _sendMessageToWebview(message: any) {
         if (this._view) {
             try {
@@ -91,23 +112,23 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
         }
     }
 
-        // extension.ts - 更新updateProblem方法
-        public async updateProblem(problem: Problem) {
-            this._currentProblem = problem;
-            await this._sendMessageToWebview({
-                command: 'updateProblem',
-                id: problem.id,
-                title: problem.label,
-                description: problem.fullDescription, // 使用完整描述
-                difficulty: problem.difficulty,
-                template: await this._getCodeTemplate(problem.id)
-            });
-        }
+    // extension.ts - 更新updateProblem方法
+    public async updateProblem(problem: Problem) {
+        this._currentProblem = problem;
+        await this._sendMessageToWebview({
+            command: 'updateProblem',
+            id: problem.id,
+            title: problem.label,
+            description: problem.fullDescription, // 使用完整描述
+            difficulty: problem.difficulty,
+            template: await this._getCodeTemplate(problem.id)
+        });
+    }
 
 
-        private async _getCodeTemplate(problemId: string): Promise<string> {
-            const templates: Record<string, string> = {
-                '1': `#include <iostream>
+    private async _getCodeTemplate(problemId: string): Promise<string> {
+        const templates: Record<string, string> = {
+            '1': `#include <iostream>
         #include <vector>
         #include "../lib/json.hpp"
         using namespace std;
