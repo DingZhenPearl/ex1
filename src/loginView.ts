@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { UserSession } from './userSession';
+import fetch from 'node-fetch';
 
 export class LoginView {
     private static panel: vscode.WebviewPanel | undefined;
