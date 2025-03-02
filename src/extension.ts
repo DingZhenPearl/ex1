@@ -156,15 +156,21 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
         #include <nlohmann/json.hpp>
         using namespace std;
         using json = nlohmann::json;
-        
+
         int main() {
             // 读取输入数组和目标值
-            int n, target;
-            cin >> n >> target;
+            vector<int> nums;
+            int num, target;
             
-            vector<int> nums(n);
-            for(int i = 0; i < n; i++) {
-                cin >> nums[i];
+            // 读取所有输入数字，直到EOF
+            while (cin >> num) {
+                nums.push_back(num);
+            }
+            
+            // 最后一个数字是目标和
+            if (!nums.empty()) {
+                target = nums.back();
+                nums.pop_back();  // 从数组中移除目标和
             }
             
             // 在这里实现你的解决方案
@@ -287,6 +293,10 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                     border-radius: 3px;
                     font-size: 0.9em;
                     display: none;
+                    white-space: pre-wrap;
+                    font-family: 'Consolas', 'Courier New', monospace;
+                    max-height: 300px;
+                    overflow-y: auto;
                 }
                 .result-container.visible {
                     display: block;
@@ -305,6 +315,24 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                     margin: 8px 0;
                     white-space: pre-wrap;
                     color: var(--vscode-foreground);
+                }
+                .test-case {
+                    margin-bottom: 10px;
+                    padding: 6px;
+                    border-radius: 3px;
+                }
+                .test-case-header {
+                    font-weight: bold;
+                    margin-bottom: 4px;
+                }
+                .test-case-content {
+                    margin-left: 12px;
+                }
+                .test-case-passed {
+                    border-left: 3px solid var(--vscode-testing-passed-border);
+                }
+                .test-case-failed {
+                    border-left: 3px solid var(--vscode-testing-failed-border);
                 }
             </style>
         </head>
@@ -325,7 +353,7 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                 </button>
                 <div id="validation-result" class="result-container"></div>
             </div>
-
+    
             <script>
                 const vscode = acquireVsCodeApi();
                 let currentProblemId = '';
@@ -333,7 +361,7 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                 // Initialize state
                 const state = vscode.getState() || { code: '' };
                 document.getElementById('code-editor').value = state.code;
-
+    
                 // Notify webview is ready
                 vscode.postMessage({ command: 'ready' });
                 
@@ -398,4 +426,5 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
         </body>
         </html>`;
     }
+
 }

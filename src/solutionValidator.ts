@@ -1,4 +1,3 @@
-// solutionValidator.ts
 import * as child_process from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -50,9 +49,8 @@ export class SolutionValidator {
 
             // Run each test case separately
             const testCases = this.getTestCases(problemId);
-            let results: string[] = [];
+            let results: { caseIndex: number; input: string; output: string; expected: string; passed: boolean }[] = [];
             let allPassed = true;
-            let failureMessage = '';
 
             for (let i = 0; i < testCases.length; i++) {
                 const testCase = testCases[i];
@@ -73,24 +71,26 @@ export class SolutionValidator {
 
                 // Validate individual test case output
                 const validationResult = this.validateSingleOutput(problemId, output, testCase);
+                
+                results.push({
+                    caseIndex: i + 1,
+                    input: this.formatInput(problemId, testCase.input),
+                    output: output,
+                    expected: this.getExpectedOutput(problemId, testCase),
+                    passed: validationResult.success
+                });
+                
                 if (!validationResult.success) {
                     allPassed = false;
-                    failureMessage = `测试用例 ${i + 1} 失败：${validationResult.message}`;
-                    break;
                 }
-                results.push(output);
             }
 
-            if (!allPassed) {
-                return {
-                    success: false,
-                    message: failureMessage
-                };
-            }
+            // Format the detailed result message
+            const resultMessage = this.formatResultMessage(results, allPassed);
 
             return {
-                success: true,
-                message: '所有测试用例通过！'
+                success: allPassed,
+                message: resultMessage
             };
 
         } catch (error) {
@@ -101,6 +101,79 @@ export class SolutionValidator {
         }
     }
 
+// 修改formatInput方法
+private formatInput(problemId: string, input: string): string {
+    switch (problemId) {
+        case '1': // Two Sum
+            try {
+                const parts = input.trim().split(' ');
+                const target = parts[parts.length - 1]; // 最后一个数是目标和
+                const nums = parts.slice(0, parts.length - 1); // 前面的所有数是数组
+                return `nums = [${nums.join(', ')}], target = ${target}`;
+            } catch (e) {
+                return input;
+            }
+        case '2': // Palindrome Number
+            return `x = ${input.trim()}`;
+        default:
+            return input;
+    }
+}
+
+    private getExpectedOutput(problemId: string, testCase: { input: string; expected?: any }): string {
+        switch (problemId) {
+            case '1': // Two Sum
+            try {
+                const parts = testCase.input.trim().split(' ');
+                const target = Number(parts[parts.length - 1]); // 最后一个数是目标和
+                
+                // For two sum, we can't know the exact expected indices without solving it,
+                // so we just explain what's expected
+                return `应返回两数和为 ${target} 的下标`;
+            } catch (e) {
+                return '无法确定期望输出';
+            }
+            case '2': // Palindrome Number
+                try {
+                    const input = parseInt(testCase.input);
+                    const expected = this.isPalindrome(input);
+                    return expected ? 'true' : 'false';
+                } catch (e) {
+                    return '无法确定期望输出';
+                }
+            default:
+                return '未知题目类型';
+        }
+    }
+
+    private formatResultMessage(
+        results: { caseIndex: number; input: string; output: string; expected: string; passed: boolean }[],
+        allPassed: boolean
+    ): string {
+        let message = '';
+        
+        if (allPassed) {
+            message = '✅ 所有测试用例通过！\n\n';
+        } else {
+            message = '❌ 部分测试用例未通过\n\n';
+        }
+        
+        // Add detailed results for each test case
+        results.forEach(result => {
+            const statusIcon = result.passed ? '✅' : '❌';
+            message += `${statusIcon} 测试用例 ${result.caseIndex}:\n`;
+            message += `   输入: ${result.input}\n`;
+            message += `   输出: ${result.output}\n`;
+            message += `   期望: ${result.expected}\n`;
+            if (!result.passed) {
+                message += '   提示: 检查您的算法逻辑是否正确\n';
+            }
+            message += '\n';
+        });
+        
+        return message;
+    }
+
     private validateSingleOutput(
         problemId: string, 
         output: string, 
@@ -108,27 +181,27 @@ export class SolutionValidator {
     ): { success: boolean; message: string } {
         switch (problemId) {
             case '1': // Two Sum
-                try {
-                    const result = JSON.parse(output);
-                    if (!Array.isArray(result) || result.length !== 2) {
-                        return { success: false, message: '输出应为包含两个数字的数组' };
-                    }
-
-                    // Parse input to get nums and target
-                    const lines = testCase.input.trim().split('\n');
-                    const [n, target] = lines[0].split(' ').map(Number);
-                    const nums = lines[1].split(' ').map(Number);
-
-                    if (nums[result[0]] + nums[result[1]] !== target) {
-                        return { 
-                            success: false, 
-                            message: `输出 [${result}] 的和不等于目标值 ${target}` 
-                        };
-                    }
-                    return { success: true, message: '' };
-                } catch (e) {
-                    return { success: false, message: '输出格式错误' };
+            try {
+                const result = JSON.parse(output);
+                if (!Array.isArray(result) || result.length !== 2) {
+                    return { success: false, message: '输出应为包含两个数字的数组' };
                 }
+
+                // Parse input to get nums and target - 修改这部分
+                const parts = testCase.input.trim().split(' ');
+                const target = Number(parts[parts.length - 1]); // 最后一个数是目标和
+                const nums = parts.slice(0, parts.length - 1).map(Number); // 前面的所有数是数组
+
+                if (nums[result[0]] + nums[result[1]] !== target) {
+                    return { 
+                        success: false, 
+                        message: `输出 [${result}] 的和不等于目标值 ${target}` 
+                    };
+                }
+                return { success: true, message: '' };
+            } catch (e) {
+                return { success: false, message: '输出格式错误' };
+            }
 
             case '2': // Palindrome Number
                 try {
@@ -161,23 +234,28 @@ export class SolutionValidator {
         return str === str.split('').reverse().join('');
     }
 
-    private getTestCases(problemId: string): { input: string; expected?: any }[] {
-        switch (problemId) {
-            case '1': // Two Sum
-                return [
-                    { input: '4 9\n2 7 11 15' },
-                    { input: '3 6\n3 2 4' },
-                    { input: '2 6\n3 3' }
-                ];
-            case '2': // Palindrome Number
-                return [
-                    { input: '121', expected: true },
-                    { input: '-121', expected: false },
-                    { input: '10', expected: false },
-                    { input: '12321', expected: true }
-                ];
-            default:
-                return [];
-        }
+
+
+
+    // 修改getTestCases方法
+private getTestCases(problemId: string): { input: string; expected?: any }[] {
+    switch (problemId) {
+        case '1': // Two Sum
+            return [
+                { input: '2 7 11 15 9' },  // 改为一行，最后一个数是目标和
+                { input: '3 2 4 6' },      // 改为一行，最后一个数是目标和
+                { input: '3 3 6' }         // 改为一行，最后一个数是目标和
+            ];
+        case '2': // Palindrome Number
+            return [
+                { input: '121', expected: true },
+                { input: '-121', expected: false },
+                { input: '10', expected: false },
+                { input: '12321', expected: true }
+            ];
+        default:
+            return [];
     }
+}
+   
 }
