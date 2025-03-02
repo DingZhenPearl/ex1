@@ -2,8 +2,46 @@
 import * as vscode from 'vscode';
 import { ProblemProvider, Problem } from './problemProvider';
 import { SolutionValidator } from './solutionValidator';
+import { LoginView } from './loginView';
+import { UserSession } from './userSession';
 
 export function activate(context: vscode.ExtensionContext) {
+    console.log('编程练习扩展已激活');
+
+    // 初始化用户会话和登录视图
+    UserSession.initialize(context);
+    LoginView.initialize(context);
+
+    // 检查用户是否已登录
+    const isLoggedIn = UserSession.isLoggedIn();
+    
+    // 注册登录命令
+    const loginCommand = vscode.commands.registerCommand('programming-practice.login', () => {
+        LoginView.show();
+    });
+    
+    // 注册注销命令
+    const logoutCommand = vscode.commands.registerCommand('programming-practice.logout', () => {
+        UserSession.logout();
+        vscode.window.showInformationMessage('已注销');
+        
+        // 注销后显示登录视图
+        LoginView.show();
+    });
+
+    // 如果用户未登录，则显示登录视图
+    if (!isLoggedIn) {
+        vscode.window.showInformationMessage('请先登录以使用编程练习功能');
+        LoginView.show();
+    } else {
+        // 用户已登录，显示欢迎信息
+        const userEmail = UserSession.getUserEmail();
+        const userType = UserSession.getUserType();
+        vscode.window.showInformationMessage(`欢迎回来，${userEmail}(${userType === 'teacher' ? '教师' : '学生'})`);
+    }
+
+    context.subscriptions.push(loginCommand, logoutCommand);
+
     const problemProvider = new ProblemProvider();
     const solutionValidator = new SolutionValidator(context.extensionPath);
 
@@ -428,3 +466,5 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
     }
 
 }
+
+export function deactivate() {}
