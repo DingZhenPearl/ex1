@@ -29,12 +29,14 @@
         {
           "id": "problemList",
           "name": "题目列表",
-          "type": "tree"
+          "type": "tree",
+          "icon": ""
         },
         {
           "id": "programmingPracticeView",
           "name": "代码编辑",
-          "type": "webview"
+          "type": "webview",
+          "icon": ""
         }
       ]
     },
