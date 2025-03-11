@@ -12,20 +12,17 @@ export async function activate(context: vscode.ExtensionContext) {
     UserSession.initialize(context);
     LoginView.initialize(context);
 
-    // 在扩展激活时初始化上下文变量（默认为未登录状态）
-    await vscode.commands.executeCommand('setContext', 'programming-practice.isLoggedIn', false);
-
     // 检查用户是否已登录
     const isLoggedIn = UserSession.isLoggedIn();
     
+    // 根据实际登录状态设置上下文变量
+    await vscode.commands.executeCommand('setContext', 'programming-practice.isLoggedIn', isLoggedIn);
+
     // 注册登录命令
     const loginCommand = vscode.commands.registerCommand('programming-practice.login', async () => {
         LoginView.show();
         
-        // 登录逻辑...
-        
-        // 登录成功后设置上下文变量
-        await vscode.commands.executeCommand('setContext', 'programming-practice.isLoggedIn', true);
+        // 登录成功逻辑在loginView.ts中处理
     });
     
     // 注册注销命令

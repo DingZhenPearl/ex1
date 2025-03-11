@@ -75,6 +75,9 @@ export class LoginView {
             if (data.success) {
                 // 保存用户信息到用户会话
                 UserSession.login(email, userType);
+                
+                // 登录成功后设置上下文变量
+                await vscode.commands.executeCommand('setContext', 'programming-practice.isLoggedIn', true);
 
                 vscode.window.showInformationMessage(`欢迎回来，${email}`);
                 this.panel?.dispose();
@@ -196,11 +199,10 @@ export class LoginView {
         <body>
             <div class="container">
                 <h1>编程练习平台</h1>
-                
                 <div class="form-container">
                     <!-- 登录表单 -->
                     <form id="loginForm">
-                        <h2>用户登录</h2>
+                        <h2>用户登录(登录后才可同步练习信息)</h2>
                         <div class="form-group">
                             <label for="loginUserType">用户类型</label>
                             <select id="loginUserType" required>
