@@ -5,25 +5,36 @@ import { SolutionValidator } from './solutionValidator';
 import { LoginView } from './loginView';
 import { UserSession } from './userSession';
 
-export function activate(context: vscode.ExtensionContext) {
+export async function activate(context: vscode.ExtensionContext) {
     console.log('编程练习扩展已激活');
 
     // 初始化用户会话和登录视图
     UserSession.initialize(context);
     LoginView.initialize(context);
 
+    // 在扩展激活时初始化上下文变量（默认为未登录状态）
+    await vscode.commands.executeCommand('setContext', 'programming-practice.isLoggedIn', false);
+
     // 检查用户是否已登录
     const isLoggedIn = UserSession.isLoggedIn();
     
     // 注册登录命令
-    const loginCommand = vscode.commands.registerCommand('programming-practice.login', () => {
+    const loginCommand = vscode.commands.registerCommand('programming-practice.login', async () => {
         LoginView.show();
+        
+        // 登录逻辑...
+        
+        // 登录成功后设置上下文变量
+        await vscode.commands.executeCommand('setContext', 'programming-practice.isLoggedIn', true);
     });
     
     // 注册注销命令
-    const logoutCommand = vscode.commands.registerCommand('programming-practice.logout', () => {
+    const logoutCommand = vscode.commands.registerCommand('programming-practice.logout', async () => {
         UserSession.logout();
         vscode.window.showInformationMessage('已注销');
+        
+        // 注销后设置上下文变量
+        await vscode.commands.executeCommand('setContext', 'programming-practice.isLoggedIn', false);
         
         // 注销后显示登录视图
         LoginView.show();

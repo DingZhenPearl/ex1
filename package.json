@@ -60,12 +60,12 @@
       "view/title": [
         {
           "command": "programming-practice.login",
-          "when": "view == problemList",
+          "when": "view == problemList && !programming-practice.isLoggedIn",
           "group": "navigation"
         },
         {
           "command": "programming-practice.logout",
-          "when": "view == problemList",
+          "when": "view == problemList && programming-practice.isLoggedIn",
           "group": "navigation"
         }
       ]
