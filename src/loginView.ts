@@ -80,22 +80,8 @@ export class LoginView {
                 // 登录成功后设置上下文变量
                 await vscode.commands.executeCommand('setContext', 'programming-practice.isLoggedIn', true);
 
-                // 先显示欢迎消息
                 vscode.window.showInformationMessage(`欢迎回来，${email}`);
-
-                // 确保面板存在并更新标题
-                if (this.panel) {
-                    const userTypeLabel = userType === 'teacher' ? '教师' : '学生';
-                    this.panel.title = `编程练习 - ${userTypeLabel}：${email}`;
-                    
-                    // 延迟关闭面板，确保用户能看到更新后的标题
-                    setTimeout(() => {
-                        if (this.panel) {
-                            this.panel.dispose();
-                            this.panel = undefined;
-                        }
-                    }, 3000); // 增加延迟到3秒，给更多时间让用户查看
-                }
+                this.panel?.dispose();
             } else {
                 this.panel?.webview.postMessage({ command: 'loginError', message: data.message || '登录失败' });
             }
