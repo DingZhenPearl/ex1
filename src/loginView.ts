@@ -62,7 +62,8 @@ export class LoginView {
 
     private static async handleLogin(userType: string, email: string, password: string) {
         try {
-            const response = await fetch('http://localhost:3000/login', {
+            console.log('正在登录...');
+            const response = await fetch('http://localhost:3000/api/auth/login', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -79,8 +80,22 @@ export class LoginView {
                 // 登录成功后设置上下文变量
                 await vscode.commands.executeCommand('setContext', 'programming-practice.isLoggedIn', true);
 
+                // 先显示欢迎消息
                 vscode.window.showInformationMessage(`欢迎回来，${email}`);
-                this.panel?.dispose();
+
+                // 确保面板存在并更新标题
+                if (this.panel) {
+                    const userTypeLabel = userType === 'teacher' ? '教师' : '学生';
+                    this.panel.title = `编程练习 - ${userTypeLabel}：${email}`;
+                    
+                    // 延迟关闭面板，确保用户能看到更新后的标题
+                    setTimeout(() => {
+                        if (this.panel) {
+                            this.panel.dispose();
+                            this.panel = undefined;
+                        }
+                    }, 3000); // 增加延迟到3秒，给更多时间让用户查看
+                }
             } else {
                 this.panel?.webview.postMessage({ command: 'loginError', message: data.message || '登录失败' });
             }
@@ -92,7 +107,8 @@ export class LoginView {
 
     private static async handleRegister(userType: string, email: string, password: string) {
         try {
-            const response = await fetch('http://localhost:3000/register', {
+            console.log('正在注册...');
+            const response = await fetch('http://localhost:3000/api/auth/register', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
