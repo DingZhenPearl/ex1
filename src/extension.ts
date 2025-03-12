@@ -4,6 +4,7 @@ import { ProblemProvider, Problem } from './problemProvider';
 import { SolutionValidator } from './solutionValidator';
 import { LoginView } from './loginView';
 import { UserSession } from './userSession';
+import { UserInfoViewProvider } from './userInfoView';
 
 export async function activate(context: vscode.ExtensionContext) {
     console.log('编程练习扩展已激活');
@@ -36,6 +37,15 @@ export async function activate(context: vscode.ExtensionContext) {
         // 注销后显示登录视图
         LoginView.show();
     });
+
+    // 注册用户信息视图提供程序
+    const userInfoProvider = new UserInfoViewProvider(context.extensionUri);
+    context.subscriptions.push(
+        vscode.window.registerWebviewViewProvider(
+            UserInfoViewProvider.viewType,
+            userInfoProvider
+        )
+    );
 
     // 如果用户未登录，则显示登录视图
     if (!isLoggedIn) {

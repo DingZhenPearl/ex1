@@ -20,12 +20,18 @@
         {
           "id": "programming-practice",
           "title": "编程练习",
-          "icon": "$(notebook)"
+          "icon": "media/icon.svg"
         }
       ]
     },
     "views": {
       "programming-practice": [
+        {
+          "id": "programming-practice.userInfo",
+          "name": "用户信息",
+          "type": "webview",
+          "icon": ""
+        },
         {
           "id": "problemList",
           "name": "题目列表",
@@ -38,6 +44,7 @@
           "type": "webview",
           "icon": ""
         }
+
       ]
     },
     "commands": [
@@ -48,28 +55,11 @@
       {
         "command": "programming-practice.startPractice",
         "title": "开始练习"
-      },
-      {
-        "command": "programming-practice.login",
-        "title": "登录编程练习平台"
-      },
-      {
-        "command": "programming-practice.logout",
-        "title": "注销编程练习平台"
       }
     ],
     "menus": {
       "view/title": [
-        {
-          "command": "programming-practice.login",
-          "when": "view == problemList && !programming-practice.isLoggedIn",
-          "group": "navigation"
-        },
-        {
-          "command": "programming-practice.logout",
-          "when": "view == problemList && programming-practice.isLoggedIn",
-          "group": "navigation"
-        }
+
       ]
     },
     "configuration": {
