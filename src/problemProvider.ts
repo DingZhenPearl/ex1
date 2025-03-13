@@ -9,8 +9,15 @@ export class Problem extends vscode.TreeItem {
         public readonly fullDescription: string
     ) {
         super(label);
-        this.tooltip = `${label} (难度：${difficulty})\n\n${fullDescription}`;
+        this.tooltip = `${label} (难度：${difficulty})`;  // 只在tooltip显示简要信息
         this.description = difficulty;
+        
+        // 设置点击行为，确保点击时可以显示详情
+        this.command = {
+            command: 'programming-practice.showProblemDetail',
+            title: '查看题目详情',
+            arguments: [this]
+        };
     }
 }
 

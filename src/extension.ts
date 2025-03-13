@@ -124,6 +124,18 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // 注册题目列表视图
     vscode.window.registerTreeDataProvider('problemList', problemProvider);
+
+    // 注册显示题目详情的命令
+    const showProblemDetailCommand = vscode.commands.registerCommand('programming-practice.showProblemDetail', (problem: Problem) => {
+        problemProvider.setCurrentProblemId(problem.id);
+        sidebarViewProvider.updateProblem(problem);
+        
+        // 当选择题目时，尝试显示编程练习视图
+        vscode.commands.executeCommand('programmingPracticeView.focus');
+    });
+    
+    // 将命令添加到订阅中
+    context.subscriptions.push(showProblemDetailCommand);
 }
 
 class SidebarViewProvider implements vscode.WebviewViewProvider {
@@ -211,10 +223,15 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
             command: 'updateProblem',
             id: problem.id,
             title: problem.label,
-            description: problem.fullDescription,
+            description: problem.fullDescription,  // 这里包含完整的题目内容
             difficulty: problem.difficulty,
             template: await this._getCodeTemplate(problem.id)
         });
+        
+        // 确保视图可见
+        if (this._view) {
+            this._view.show(true); // 显示并聚焦视图
+        }
     }
 
     private async _getCodeTemplate(problemId: string): Promise<string> {
@@ -265,6 +282,7 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
             cout << "true" << endl;  // 或 cout << "false" << endl;
             
             return 0;
+            
         }`,
         };
         
@@ -290,28 +308,45 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                     flex-direction: column;
                     height: 100vh;
                     margin: 0;
+                    overflow: hidden;
                 }
                 .problem-container {
                     margin-bottom: 12px;
                     flex: 0 0 auto;
-                    overflow-y: auto;
+                    border: 1px solid var(--vscode-panel-border);
+                    border-radius: 5px;
+                    padding: 10px;
+                }
+                .problem-header {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: 10px;
+                    padding-bottom: 5px;
+                    border-bottom: 1px solid var(--vscode-panel-border);
                 }
                 h3 {
                     margin: 0 0 8px 0;
-                    font-size: 1.1em;
+                    font-size: 1.2em;
                     color: var(--vscode-editor-foreground);
+                    font-weight: bold;
                 }
                 .difficulty {
                     margin: 8px 0;
                     font-size: 0.9em;
-                    color: var(--vscode-descriptionForeground);
+                    padding: 2px 8px;
+                    border-radius: 10px;
+                    background-color: var(--vscode-badge-background);
+                    color: var(--vscode-badge-foreground);
+                    font-weight: bold;
                 }
                 .editor-container {
                     margin: 8px 0;
                     flex: 1 1 auto;
                     display: flex;
                     flex-direction: column;
-                    min-height: 200px;
+                    min-height: 150px;
+                    overflow: hidden;
                 }
                 #code-editor {
                     width: 100%;
@@ -383,45 +418,56 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                     margin: 8px 0;
                     white-space: pre-wrap;
                     color: var(--vscode-foreground);
+                    line-height: 1.5;
                 }
-                .test-case {
-                    margin-bottom: 10px;
-                    padding: 6px;
-                    border-radius: 3px;
+                .no-problem {
+                    text-align: center;
+                    color: var(--vscode-descriptionForeground);
+                    padding: 20px;
+                    font-style: italic;
                 }
-                .test-case-header {
+                .section-title {
                     font-weight: bold;
-                    margin-bottom: 4px;
+                    margin: 10px 0 5px 0;
+                    color: var(--vscode-editorLightBulb-foreground);
                 }
-                .test-case-content {
-                    margin-left: 12px;
-                }
-                .test-case-passed {
-                    border-left: 3px solid var(--vscode-testing-passed-border);
-                }
-                .test-case-failed {
-                    border-left: 3px solid var(--vscode-testing-failed-border);
+                .content-scrollable {
+                    overflow-y: auto;
+                    display: flex;
+                    flex-direction: column;
+                    flex: 1;
                 }
             </style>
         </head>
         <body>
-            <div class="problem-container">
-                <h3 id="problem-title"></h3>
-                <div id="problem-description"></div>
-                <div class="difficulty">Difficulty: <span id="problem-difficulty"></span></div>
-            </div>
-            
-            <div class="editor-container">
-                <textarea id="code-editor" spellcheck="false" placeholder="Code from your active editor will appear here..."></textarea>
+            <div class="content-scrollable">
+                <div class="problem-container" id="problem-details">
+                    <div id="no-problem-selected" class="no-problem">
+                        请从左侧题目列表中选择一个题目开始练习
+                    </div>
+                    
+                    <div id="problem-content" style="display: none;">
+                        <div class="problem-header">
+                            <h3 id="problem-title"></h3>
+                            <span class="difficulty" id="problem-difficulty"></span>
+                        </div>
+                        <div class="section-title">题目详情：</div>
+                        <div id="problem-description"></div>
+                    </div>
+                </div>
+                
+                <div class="editor-container">
+                    <textarea id="code-editor" spellcheck="false" placeholder="选择题目后，代码将在这里显示..."></textarea>
+                </div>
             </div>
             
             <div class="controls-container">
                 <button id="submit-button" class="submit-button" onclick="submitSolution()">
-                    Submit Solution
+                    提交解答
                 </button>
                 <div id="validation-result" class="result-container"></div>
             </div>
-    
+
             <script>
                 const vscode = acquireVsCodeApi();
                 let currentProblemId = '';
@@ -429,7 +475,7 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                 // Initialize state
                 const state = vscode.getState() || { code: '' };
                 document.getElementById('code-editor').value = state.code;
-    
+
                 // Notify webview is ready
                 vscode.postMessage({ command: 'ready' });
                 
@@ -438,8 +484,13 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                     switch (message.command) {
                         case 'updateProblem':
                             currentProblemId = message.id;
+                            
+                            // 显示题目内容，隐藏"未选择题目"消息
+                            document.getElementById('no-problem-selected').style.display = 'none';
+                            document.getElementById('problem-content').style.display = 'block';
+                            
                             document.getElementById('problem-title').textContent = message.title;
-                            document.getElementById('problem-description').textContent = message.description;
+                            document.getElementById('problem-description').textContent = message.description || '无题目描述';
                             document.getElementById('problem-difficulty').textContent = message.difficulty;
                             
                             // Only update editor with template if no code is currently shown
