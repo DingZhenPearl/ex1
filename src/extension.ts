@@ -112,6 +112,18 @@ export async function activate(context: vscode.ExtensionContext) {
             }
         })
     );
+
+    // 注册刷新题目命令
+    const refreshProblemsCommand = vscode.commands.registerCommand('programming-practice.refreshProblems', () => {
+        problemProvider.refreshProblems();
+        vscode.window.showInformationMessage('正在刷新题目列表...');
+    });
+
+    // 将命令添加到订阅中
+    context.subscriptions.push(refreshProblemsCommand);
+
+    // 注册题目列表视图
+    vscode.window.registerTreeDataProvider('problemList', problemProvider);
 }
 
 class SidebarViewProvider implements vscode.WebviewViewProvider {

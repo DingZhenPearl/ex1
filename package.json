@@ -55,11 +55,20 @@
       {
         "command": "programming-practice.startPractice",
         "title": "开始练习"
+      },
+      {
+        "command": "programming-practice.refreshProblems",
+        "title": "刷新题目列表",
+        "icon": "$(refresh)"
       }
     ],
     "menus": {
       "view/title": [
-
+        {
+          "command": "programming-practice.refreshProblems",
+          "when": "view == problemList",
+          "group": "navigation"
+        }
       ]
     },
     "configuration": {
@@ -76,6 +85,11 @@
             "-std=c++11"
           ],
           "description": "Additional compiler arguments"
+        },
+        "programmingPractice.serverUrl": {
+          "type": "string",
+          "default": "http://localhost:3000",
+          "description": "服务器地址，用于获取题目"
         }
       }
     }
