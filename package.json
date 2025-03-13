@@ -20,7 +20,7 @@
         {
           "id": "programming-practice",
           "title": "编程练习",
-          "icon": "media/icon.svg"
+          "icon": "$(notebook)"
         }
       ]
     },
