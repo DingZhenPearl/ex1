@@ -60,11 +60,6 @@
         "command": "programming-practice.refreshProblems",
         "title": "刷新题目列表",
         "icon": "$(refresh)"
-      },
-      {
-        "command": "programming-practice.viewCodingStats",
-        "title": "查看编程统计",
-        "icon": "$(graph)"
       }
     ],
     "menus": {
@@ -72,11 +67,6 @@
         {
           "command": "programming-practice.refreshProblems",
           "when": "view == problemList",
-          "group": "navigation"
-        },
-        {
-          "command": "programming-practice.viewCodingStats",
-          "when": "programming-practice.isLoggedIn == true",
           "group": "navigation"
         }
       ]
