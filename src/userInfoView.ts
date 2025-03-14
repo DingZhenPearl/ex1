@@ -35,6 +35,12 @@ export class UserInfoViewProvider implements vscode.WebviewViewProvider {
                 case 'logout':
                     vscode.commands.executeCommand('programming-practice.logout');
                     break;
+                case 'editProfile':
+                    this._showEditProfileView();
+                    break;
+                case 'refreshProfile':
+                    this._refreshUserProfile();
+                    break;
             }
         });
     }
@@ -44,13 +50,29 @@ export class UserInfoViewProvider implements vscode.WebviewViewProvider {
             this._view.webview.html = this._getHtmlForWebview();
         }
     }
+    
+    private async _refreshUserProfile() {
+        const email = UserSession.getUserEmail();
+        if (email) {
+            await UserSession.fetchUserProfile(email);
+            this._update();
+        }
+    }
+    
+    private _showEditProfileView() {
+        // 可以在这里实现个人信息编辑功能
+        vscode.window.showInformationMessage('个人信息编辑功能将在未来版本中提供');
+    }
 
     private _getHtmlForWebview() {
         const isLoggedIn = UserSession.isLoggedIn();
         const userEmail = UserSession.getUserEmail() || '';
         const userType = UserSession.getUserType() || '';
         const userTypeText = userType === 'teacher' ? '教师' : '学生';
-
+        
+        // 获取详细个人信息
+        const userProfile = UserSession.getUserProfile();
+        
         return `<!DOCTYPE html>
         <html lang="zh-cn">
         <head>
@@ -87,11 +109,29 @@ export class UserInfoViewProvider implements vscode.WebviewViewProvider {
                     border-radius: 2px;
                     cursor: pointer;
                     width: 100%;
+                    margin-bottom: 5px;
                 }
                 button:hover {
                     background-color: var(--vscode-button-hoverBackground);
                 }
                 .login-button {
+                    background-color: var(--vscode-button-secondaryBackground);
+                    color: var(--vscode-button-secondaryForeground);
+                }
+                .profile-section {
+                    margin-top: 10px;
+                    border-top: 1px solid var(--vscode-panel-border);
+                    padding-top: 10px;
+                }
+                .section-title {
+                    font-weight: bold;
+                    margin-bottom: 8px;
+                }
+                .empty-info {
+                    font-style: italic;
+                    color: var(--vscode-disabledForeground);
+                }
+                .action-btn {
                     background-color: var(--vscode-button-secondaryBackground);
                     color: var(--vscode-button-secondaryForeground);
                 }
@@ -101,7 +141,7 @@ export class UserInfoViewProvider implements vscode.WebviewViewProvider {
             <div class="container">
                 ${isLoggedIn ? `
                     <div class="user-info">
-                        <h3>已登录</h3>
+                        <h3>基本信息</h3>
                         <div class="info-row">
                             <span>邮箱：</span>
                             <span>${userEmail}</span>
@@ -110,7 +150,35 @@ export class UserInfoViewProvider implements vscode.WebviewViewProvider {
                             <span>身份：</span>
                             <span>${userTypeText}</span>
                         </div>
+                        
+                        <div class="profile-section">
+                            <div class="section-title">个人资料</div>
+                            ${userProfile ? `
+                                <div class="info-row">
+                                    <span>姓名：</span>
+                                    <span>${userProfile.name || '未设置'}</span>
+                                </div>
+                                ${userType === 'student' ? `
+                                    <div class="info-row">
+                                        <span>学号：</span>
+                                        <span>${userProfile.student_id || '未设置'}</span>
+                                    </div>
+                                    <div class="info-row">
+                                        <span>班级：</span>
+                                        <span>${userProfile.class_name || '未设置'}</span>
+                                    </div>
+                                    <div class="info-row">
+                                        <span>专业：</span>
+                                        <span>${userProfile.major || '未设置'}</span>
+                                    </div>
+                                ` : ''}
+                            ` : `
+                                <div class="empty-info">暂无个人资料信息</div>
+                            `}
+                        </div>
                     </div>
+                    <button id="refreshBtn" class="action-btn">刷新个人信息</button>
+                    <button id="editProfileBtn" class="action-btn">编辑个人信息</button>
                     <button id="logoutBtn">注销</button>
                 ` : `
                     <div class="user-info">
@@ -135,6 +203,20 @@ export class UserInfoViewProvider implements vscode.WebviewViewProvider {
                     if (logoutBtn) {
                         logoutBtn.addEventListener('click', () => {
                             vscode.postMessage({ command: 'logout' });
+                        });
+                    }
+                    
+                    const editProfileBtn = document.getElementById('editProfileBtn');
+                    if (editProfileBtn) {
+                        editProfileBtn.addEventListener('click', () => {
+                            vscode.postMessage({ command: 'editProfile' });
+                        });
+                    }
+                    
+                    const refreshBtn = document.getElementById('refreshBtn');
+                    if (refreshBtn) {
+                        refreshBtn.addEventListener('click', () => {
+                            vscode.postMessage({ command: 'refreshProfile' });
                         });
                     }
                 })();
