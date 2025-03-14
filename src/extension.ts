@@ -5,6 +5,7 @@ import { SolutionValidator } from './solutionValidator';
 import { LoginView } from './loginView';
 import { UserSession } from './userSession';
 import { UserInfoViewProvider } from './userInfoView';
+import { CodingDataCollector } from './codingDataCollector';
 
 export async function activate(context: vscode.ExtensionContext) {
     console.log('编程练习扩展已激活');
@@ -12,6 +13,13 @@ export async function activate(context: vscode.ExtensionContext) {
     // 初始化用户会话和登录视图
     UserSession.initialize(context);
     LoginView.initialize(context);
+
+    // 初始化编程数据收集器并传入上下文
+    const codingDataCollector = CodingDataCollector.getInstance();
+    codingDataCollector.initializeGlobalState(context);
+    
+    // 列出当前已记录的所有查看时间（调试用）
+    codingDataCollector.listAllViewTimes();
 
     // 检查用户是否已登录
     const isLoggedIn = UserSession.isLoggedIn();
@@ -74,13 +82,23 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.window.registerWebviewViewProvider('programmingPracticeView', sidebarViewProvider)
     );
 
-    // Handle problem selection
+    // Handle problem selection - 确保在适当位置记录查看时间
     context.subscriptions.push(
         treeView.onDidChangeSelection(event => {
             if (event.selection.length > 0) {
                 const selectedProblem = event.selection[0] as Problem;
                 problemProvider.setCurrentProblemId(selectedProblem.id);
+                
+                // 记录用户查看题目的时间 - 明确在此处记录
+                console.log(`用户选择题目: ${selectedProblem.id} (${selectedProblem.label})`);
+                codingDataCollector.recordProblemView(selectedProblem.id);
+                
+                // 更新视图
                 sidebarViewProvider.updateProblem(selectedProblem);
+                
+                // 检查并显示记录的查看时间（调试用）
+                const viewTime = codingDataCollector.getProblemFirstViewTime(selectedProblem.id);
+                console.log(`题目 ${selectedProblem.id} 查看时间记录状态: ${viewTime ? '已记录' : '未记录'}`);
                 
                 // When selecting a problem, also sync any active editor content
                 const activeEditor = vscode.window.activeTextEditor;
@@ -136,6 +154,48 @@ export async function activate(context: vscode.ExtensionContext) {
     
     // 将命令添加到订阅中
     context.subscriptions.push(showProblemDetailCommand);
+
+    // 注册查看学生编程统计的命令
+    const viewCodingStatsCommand = vscode.commands.registerCommand('programming-practice.viewCodingStats', async () => {
+        if (!UserSession.isLoggedIn()) {
+            vscode.window.showWarningMessage('请先登录以查看编程统计');
+            return;
+        }
+        
+        vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: '正在加载编程统计数据...',
+            cancellable: false
+        }, async () => {
+            const stats = await codingDataCollector.getStudentStats();
+            
+            if (!stats || !stats.success) {
+                vscode.window.showErrorMessage('无法获取编程统计数据');
+                return;
+            }
+            
+            // 显示简要统计信息
+            const data = stats.data;
+            const basicStats = data.basic_stats;
+            
+            if (basicStats) {
+                const message = `
+                已尝试题目: ${basicStats.total_problems_attempted || 0}
+                已解决题目: ${basicStats.problems_solved || 0}
+                平均尝试次数: ${Math.round((basicStats.avg_attempts_until_success || 0) * 10) / 10}
+                `;
+                
+                vscode.window.showInformationMessage('编程统计数据', {
+                    modal: true,
+                    detail: message
+                });
+            } else {
+                vscode.window.showInformationMessage('暂无编程统计数据');
+            }
+        });
+    });
+    
+    context.subscriptions.push(viewCodingStatsCommand);
 }
 
 class SidebarViewProvider implements vscode.WebviewViewProvider {
@@ -167,13 +227,63 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                 switch (message.command) {
                     case 'submit':
                         if (this._currentProblem) {
+                            console.log(`正在验证问题 ${this._currentProblem.id} 的解决方案...`);
                             const validator = new SolutionValidator(this._extensionUri.fsPath);
-                            const result = await validator.validate(this._currentProblem.id, message.code);
-                            await this._sendMessageToWebview({
-                                command: 'validationResult',
-                                success: result.success,
-                                message: result.message
-                            });
+                            
+                            const serverUrl = vscode.workspace.getConfiguration('programmingPractice').get('serverUrl') || 'http://localhost:3000';
+                            console.log(`使用服务器 ${serverUrl} 进行代码验证`);
+                            
+                            try {
+                                const result = await validator.validate(this._currentProblem.id, message.code);
+                                
+                                // 无论成功失败，总是提交详细的执行信息
+                                const dataCollector = CodingDataCollector.getInstance();
+                                
+                                // 显示当前记录的首次查看时间，辅助调试
+                                const viewTime = dataCollector.getProblemFirstViewTime(this._currentProblem.id);
+                                console.log(`提交前获取题目 ${this._currentProblem.id} 首次查看时间: ${viewTime || 'undefined'}`);
+                                
+                                const submitSuccess = await dataCollector.submitCodingData(
+                                    this._currentProblem.id,
+                                    this._currentProblem.label,
+                                    message.code,
+                                    result.success,
+                                    {
+                                        errorType: result.errorType,
+                                        message: result.message,
+                                        details: result.executionDetails
+                                    }
+                                );
+                                
+                                await this._sendMessageToWebview({
+                                    command: 'validationResult',
+                                    success: result.success,
+                                    message: result.message,
+                                    errorType: result.errorType
+                                });
+                            } catch (validationError) {
+                                console.error('代码验证过程出错:', validationError);
+                                
+                                // 即使验证失败，也要尝试记录数据
+                                const dataCollector = CodingDataCollector.getInstance();
+                                await dataCollector.submitCodingData(
+                                    this._currentProblem.id,
+                                    this._currentProblem.label,
+                                    message.code,
+                                    false,
+                                    {
+                                        errorType: 'ValidationError',
+                                        message: validationError instanceof Error ? validationError.message : String(validationError),
+                                        details: validationError
+                                    }
+                                );
+                                
+                                await this._sendMessageToWebview({
+                                    command: 'validationResult',
+                                    success: false,
+                                    message: `验证过程出错: ${validationError instanceof Error ? validationError.message : String(validationError)}`
+                                });
+                            }
                         }
                         break;
                     case 'ready':
@@ -190,6 +300,7 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                         break;
                 }
             } catch (error) {
+                console.error('处理webview消息时出错:', error);
                 await this._sendMessageToWebview({
                     command: 'validationResult',
                     success: false,
@@ -219,6 +330,11 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
 
     public async updateProblem(problem: Problem) {
         this._currentProblem = problem;
+        
+        // 在更新问题详情前，确保查看时间已记录
+        const dataCollector = CodingDataCollector.getInstance();
+        dataCollector.getProblemFirstViewTime(problem.id);
+        
         await this._sendMessageToWebview({
             command: 'updateProblem',
             id: problem.id,

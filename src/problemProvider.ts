@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import fetch from 'node-fetch';
+import { CodingDataCollector } from './codingDataCollector';
 
 export class Problem extends vscode.TreeItem {
     constructor(
@@ -42,6 +43,12 @@ export class ProblemProvider implements vscode.TreeDataProvider<Problem> {
 
     async refreshProblems(): Promise<void> {
         try {
+            // 不要重置数据收集器，我们希望保留查看时间记录
+            // CodingDataCollector.getInstance().reset();
+            
+            // 打印所有记录的查看时间以便调试
+            CodingDataCollector.getInstance().listAllViewTimes();
+            
             this.isLoading = true;
             // 在refreshProblems方法中替换serverUrl的获取方式
             const serverUrl = vscode.workspace.getConfiguration('programmingPractice').get('serverUrl') || 'http://localhost:3000';
