@@ -225,7 +225,9 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
             title: problem.label,
             description: problem.fullDescription,  // 这里包含完整的题目内容
             difficulty: problem.difficulty,
-            template: await this._getCodeTemplate(problem.id)
+            template: await this._getCodeTemplate(problem.id),
+            inputExample: problem.inputExample || '',  // 添加输入样例
+            outputExample: problem.outputExample || '' // 添加输出样例
         });
         
         // 确保视图可见
@@ -437,6 +439,16 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                     flex-direction: column;
                     flex: 1;
                 }
+                .example-block {
+                    background-color: var(--vscode-textCodeBlock-background);
+                    border: 1px solid var(--vscode-widget-border);
+                    border-radius: 3px;
+                    padding: 8px;
+                    margin: 5px 0;
+                    font-family: 'Consolas', 'Courier New', monospace;
+                    white-space: pre-wrap;
+                    overflow-x: auto;
+                }
             </style>
         </head>
         <body>
@@ -453,6 +465,13 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                         </div>
                         <div class="section-title">题目详情：</div>
                         <div id="problem-description"></div>
+                        
+                        <!-- 添加输入样例和输出样例部分 -->
+                        <div class="section-title">输入样例：</div>
+                        <div id="input-example" class="example-block"></div>
+                        
+                        <div class="section-title">输出样例：</div>
+                        <div id="output-example" class="example-block"></div>
                     </div>
                 </div>
                 
@@ -492,6 +511,10 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                             document.getElementById('problem-title').textContent = message.title;
                             document.getElementById('problem-description').textContent = message.description || '无题目描述';
                             document.getElementById('problem-difficulty').textContent = message.difficulty;
+                            
+                            // 显示输入和输出样例
+                            document.getElementById('input-example').textContent = message.inputExample || '无输入样例';
+                            document.getElementById('output-example').textContent = message.outputExample || '无输出样例';
                             
                             // Only update editor with template if no code is currently shown
                             const editor = document.getElementById('code-editor');

@@ -6,7 +6,9 @@ export class Problem extends vscode.TreeItem {
         public readonly id: string,
         public readonly label: string,
         public readonly difficulty: string,
-        public readonly fullDescription: string
+        public readonly fullDescription: string,
+        public readonly inputExample: string,
+        public readonly outputExample: string
     ) {
         super(label);
         this.tooltip = `${label} (难度：${difficulty})`;  // 只在tooltip显示简要信息
@@ -58,7 +60,9 @@ export class ProblemProvider implements vscode.TreeDataProvider<Problem> {
                         p.id.toString(),
                         p.title,
                         p.difficulty,
-                        p.content
+                        p.content,
+                        p.input_example,  // 修改这里匹配后端字段名
+                        p.output_example  // 修改这里匹配后端字段名
                     );
                 });
                 
@@ -74,52 +78,52 @@ export class ProblemProvider implements vscode.TreeDataProvider<Problem> {
         } catch (error) {
             vscode.window.showErrorMessage(`获取题目列表失败: ${error instanceof Error ? error.message : String(error)}`);
             // 加载失败时使用默认题目（可选）
-            this.useDefaultProblems();
+            // this.useDefaultProblems();
         } finally {
             this.isLoading = false;
         }
     }
 
     // 加载失败时使用默认题目
-    private useDefaultProblems(): void {
-        this.problems = [
-            new Problem('1', '两数之和', 'easy',
-                `题目要求：
-给定一个整数数组 nums 和一个整数目标值 target，请你在该数组中找出和为目标值 target 的那两个整数，并返回它们的数组下标。
+//     private useDefaultProblems(): void {
+//         this.problems = [
+//             new Problem('1', '两数之和', 'easy',
+//                 `题目要求：
+// 给定一个整数数组 nums 和一个整数目标值 target，请你在该数组中找出和为目标值 target 的那两个整数，并返回它们的数组下标。
 
-输出要求：
-- 用cin输入
-- 对每个测试用例，将结果以 JSON 数组格式输出，例如：[0, 1]
-- 每次只有一个样例测试
+// 输出要求：
+// - 用cin输入
+// - 对每个测试用例，将结果以 JSON 数组格式输出，例如：[0, 1]
+// - 每次只有一个样例测试
 
-示例：
-输入：nums = [2,7,11,15], target = 9
-输出：[0,1]
+// 示例：
+// 输入：nums = [2,7,11,15], target = 9
+// 输出：[0,1]
 
-测试用例：
-1. nums = [2,7,11,15], target = 9
-2. nums = [3,2,4], target = 6
-3. nums = [3,3], target = 6`),
-            new Problem('2', '回文数', 'easy',
-                `题目要求：
-给你一个整数 x ，判断它是否是回文整数。
+// 测试用例：
+// 1. nums = [2,7,11,15], target = 9
+// 2. nums = [3,2,4], target = 6
+// 3. nums = [3,3], target = 6`),
+//             new Problem('2', '回文数', 'easy',
+//                 `题目要求：
+// 给你一个整数 x ，判断它是否是回文整数。
 
-输出要求：
-- 用cin输入
-- 对每个测试用例，输出 "true" 或 "false"
-- 每次只有一个样例测试
+// 输出要求：
+// - 用cin输入
+// - 对每个测试用例，输出 "true" 或 "false"
+// - 每次只有一个样例测试
 
-示例：
-输入：x = 121
-输出：true
+// 示例：
+// 输入：x = 121
+// 输出：true
 
-测试用例：
-1. x = 121
-2. x = -121
-3. x = 10
-4. x = 12321`),
-        ];
-    }
+// 测试用例：
+// 1. x = 121
+// 2. x = -121
+// 3. x = 10
+// 4. x = 12321`),
+//         ];
+//     }
 
     getTreeItem(element: Problem): vscode.TreeItem {
         return element;
@@ -128,7 +132,7 @@ export class ProblemProvider implements vscode.TreeDataProvider<Problem> {
     getChildren(): Problem[] {
         if (this.isLoading) {
             // 如果正在加载，可以返回一个"加载中"项
-            return [new Problem('loading', '加载中...', '', '')];
+            return [new Problem('loading', '加载中...', '', '','','')];
         }
         return this.problems;
     }
