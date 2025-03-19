@@ -61,6 +61,24 @@
         "command": "programming-practice.refreshProblems",
         "title": "刷新题目列表",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "programmingPractice.aiAnalyzeCode",
+        "title": "使用AI分析当前代码",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "programmingPractice.requestAIFix",
+        "title": "应用AI修复建议"
+      },
+      {
+        "command": "programmingPractice.requestAIHelp",
+        "title": "获取AI更多帮助"
+      },
+      {
+        "command": "programmingPractice.toggleAIAnalysis",
+        "title": "切换AI代码分析",
+        "icon": "$(sparkle)"
       }
     ],
     "menus": {
@@ -69,6 +87,13 @@
           "command": "programming-practice.refreshProblems",
           "when": "view == problemList",
           "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "programmingPractice.aiAnalyzeCode",
+          "when": "editorLangId == cpp || editorLangId == c",
+          "group": "7_modification"
         }
       ]
     },
@@ -106,6 +131,42 @@
           "type": "string",
           "default": "http://localhost:3000",
           "description": "服务器地址，用于获取题目"
+        },
+        "programmingPractice.enableAIAnalysis": {
+          "type": "boolean",
+          "default": true,
+          "description": "启用AI代码分析功能"
+        },
+        "programmingPractice.aiAnalysisDelayMs": {
+          "type": "number",
+          "default": 1500,
+          "description": "AI代码分析延迟时间（毫秒）"
+        },
+        "programmingPractice.aiApiKey": {
+          "type": "string",
+          "default": "ipzotlGevNqQsafvWSXi:cooExiNRkHtQtHkkIqNk",
+          "description": "AI大模型API密钥"
+        },
+        "programmingPractice.aiApiEndpoint": {
+          "type": "string",
+          "default": "https://spark-api-open.xf-yun.com/v1/chat/completions",
+          "description": "AI大模型API终端点"
+        },
+        "programmingPractice.aiModelName": {
+          "type": "string",
+          "default": "lite",
+          "enum": ["lite"],
+          "description": "使用的AI模型名称"
+        },
+        "programmingPractice.aiMaxFileSizeKB": {
+          "type": "number",
+          "default": 100,
+          "description": "AI分析的最大文件大小（KB）"
+        },
+        "programmingPractice.aiApiMinIntervalMs": {
+          "type": "number",
+          "default": 2000,
+          "description": "AI API调用最小间隔时间（毫秒）"
         }
       }
     }

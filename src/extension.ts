@@ -7,11 +7,16 @@ import { UserSession } from './userSession';
 import { UserInfoViewProvider } from './userInfoView';
 import { CodingDataCollector } from './codingDataCollector';
 import { CppAnalyzer } from './cppAnalyzer';
+import { AICodeAnalyzer } from './aiCodeAnalyzer'; // 导入AI代码分析器
 
 export async function activate(context: vscode.ExtensionContext) {
     // 初始化C++代码分析器
     const cppAnalyzer = CppAnalyzer.getInstance();
     cppAnalyzer.initialize(context);
+    
+    // 初始化AI代码分析器
+    const aiCodeAnalyzer = AICodeAnalyzer.getInstance();
+    aiCodeAnalyzer.initialize(context);
 
     console.log('编程练习扩展已激活');
 
@@ -201,6 +206,23 @@ export async function activate(context: vscode.ExtensionContext) {
     });
     
     context.subscriptions.push(viewCodingStatsCommand);
+
+    // 注册AI代码分析相关命令
+    context.subscriptions.push(
+        vscode.commands.registerCommand('programmingPractice.requestAIFix', async (document: vscode.TextDocument, diagnostic: vscode.Diagnostic, suggestion: string) => {
+            await aiCodeAnalyzer.applyAISuggestion(document, diagnostic, suggestion);
+        }),
+        
+        vscode.commands.registerCommand('programmingPractice.requestAIHelp', async (document: vscode.TextDocument, diagnostic: vscode.Diagnostic) => {
+            await aiCodeAnalyzer.getAdditionalHelp(document, diagnostic);
+        }),
+        
+        vscode.commands.registerCommand('programmingPractice.toggleAIAnalysis', () => {
+            const currentSetting = vscode.workspace.getConfiguration('programmingPractice').get('enableAIAnalysis');
+            vscode.workspace.getConfiguration('programmingPractice').update('enableAIAnalysis', !currentSetting, vscode.ConfigurationTarget.Global);
+            vscode.window.showInformationMessage(`AI代码分析已${!currentSetting ? '启用' : '禁用'}`);
+        })
+    );
 }
 
 class SidebarViewProvider implements vscode.WebviewViewProvider {
