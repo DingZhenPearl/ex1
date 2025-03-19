@@ -6,8 +6,13 @@ import { LoginView } from './loginView';
 import { UserSession } from './userSession';
 import { UserInfoViewProvider } from './userInfoView';
 import { CodingDataCollector } from './codingDataCollector';
+import { CppAnalyzer } from './cppAnalyzer';
 
 export async function activate(context: vscode.ExtensionContext) {
+    // 初始化C++代码分析器
+    const cppAnalyzer = CppAnalyzer.getInstance();
+    cppAnalyzer.initialize(context);
+
     console.log('编程练习扩展已激活');
 
     // 初始化用户会话和登录视图

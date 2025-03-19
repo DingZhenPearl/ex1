@@ -8,7 +8,8 @@
   },
   "categories": [
     "Education",
-    "Programming Languages"
+    "Programming Languages",
+    "Linters"
   ],
   "activationEvents": [
     "onStartupFinished"
@@ -74,6 +75,21 @@
     "configuration": {
       "title": "C++ Programming Practice",
       "properties": {
+        "cpp.analysis.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "启用C++代码实时分析"
+        },
+        "cpp.analysis.style": {
+          "type": "boolean",
+          "default": true,
+          "description": "启用代码风格检查"
+        },
+        "cpp.analysis.performance": {
+          "type": "boolean",
+          "default": true,
+          "description": "启用性能优化建议"
+        },
         "programmingPractice.compilerPath": {
           "type": "string",
           "default": "g++",
