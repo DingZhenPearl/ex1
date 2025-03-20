@@ -201,12 +201,12 @@
         },
         "programmingPractice.enableAICodeCompletion": {
           "type": "boolean",
-          "default": false,
+          "default": true,
           "description": "启用AI代码补全功能"
         },
         "programmingPractice.enableTabCompletion": {
           "type": "boolean",
-          "default": false,
+          "default": true,
           "description": "启用Tab键触发的AI智能补全"
         },
         "programmingPractice.completionDelay": {
