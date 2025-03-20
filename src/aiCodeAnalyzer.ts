@@ -805,6 +805,247 @@ ${contextCode}
         </body>
         </html>`;
     }
+
+    /**
+     * 调用AI API的通用方法
+     * 这个方法抽象出了API调用的通用逻辑，便于其他组件复用
+     */
+    public async callAIApi(prompt: string, systemRole: string, temperature: number = 0.3, maxTokens: number = 2000): Promise<string> {
+        const apiKey = vscode.workspace.getConfiguration('programmingPractice').get('aiApiKey', '');
+        if (!apiKey) {
+            vscode.window.showWarningMessage('未配置AI API密钥，无法进行AI分析', '打开设置').then(selection => {
+                if (selection === '打开设置') {
+                    vscode.commands.executeCommand('workbench.action.openSettings', 'programmingPractice.aiApiKey');
+                }
+            });
+            throw new Error('未配置AI API密钥');
+        }
+
+        const apiEndpoint = vscode.workspace.getConfiguration('programmingPractice').get('aiApiEndpoint', '');
+        
+        // 检查API调用频率限制
+        const now = Date.now();
+        const minInterval = vscode.workspace.getConfiguration('programmingPractice').get('aiApiMinIntervalMs', 2000);
+        
+        if (now - this.lastRequestTime < minInterval) {
+            // 需要等待以满足频率限制
+            const delay = minInterval - (now - this.lastRequestTime);
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+        
+        // 记录请求时间
+        this.lastRequestTime = Date.now();
+        
+        // 添加重试逻辑
+        let retries = 3;
+        let lastError: Error | null = null;
+        
+        while (retries > 0) {
+            try {
+                const response = await fetch(apiEndpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${apiKey}`
+                    },
+                    body: JSON.stringify({
+                        model: vscode.workspace.getConfiguration('programmingPractice').get('aiModelName', 'lite'),
+                        messages: [
+                            { "role": "system", "content": systemRole },
+                            { "role": "user", "content": prompt }
+                        ],
+                        temperature: temperature,
+                        max_tokens: maxTokens
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`API调用失败: ${response.status} ${response.statusText} - ${errorText}`);
+                }
+
+                const data = await response.json();
+                return data.choices[0].message.content;
+            } catch (error) {
+                retries--;
+                lastError = error instanceof Error ? error : new Error(String(error));
+                
+                if (retries === 0) {
+                    throw lastError;
+                }
+                console.log(`API调用失败，将在2秒后重试，剩余重试次数: ${retries}`);
+                await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+        }
+        
+        // 如果所有重试都失败
+        throw new Error('API调用失败，已达到最大重试次数');
+    }
+
+    /**
+     * 为指定问题生成解决方案
+     * @param problemId 问题ID
+     * @param problemDescription 问题描述
+     * @returns 生成的解决方案代码
+     */
+    public async generateSolution(problemId: string, problemDescription: string): Promise<string | undefined> {
+        try {
+            // 显示进度通知
+            return await vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: "AI正在生成解答...",
+                cancellable: false
+            }, async () => {
+                // 获取问题的代码模板或默认模板
+                const codeTemplate = await this.getProblemTemplate(problemId);
+                
+                // 构建更详细的提示
+                const prompt = `请为以下C++编程题目生成完整的解答代码：
+                
+问题ID: ${problemId}
+
+问题描述:
+${problemDescription}
+
+请提供一个完整的、可以正确通过测试的解决方案，并确保代码包含必要的注释来解释关键步骤。
+生成的代码必须是完整的C++程序，包含所有必要的头文件、主函数和辅助函数。
+
+${codeTemplate ? `以下是代码模板，请基于此完成解答：
+\`\`\`cpp
+${codeTemplate}
+\`\`\`` : ''}
+
+请生成完整的代码解答：`;
+
+                try {
+                    // 使用通用AI API调用函数获取解答，增加令牌限制
+                    const solution = await this.callAIApi(
+                        prompt,
+                        "你是一个C++编程助手。你的任务是为编程题目生成完整、可编译、可以通过所有测试用例的正确解决方案。请生成完整的程序，包含所有必要的头文件和实现。",
+                        0.2,
+                        4000  // 增加令牌限制，允许生成更长的代码
+                    );
+                    
+                    // 改进代码提取逻辑
+                    let extractedCode: string;
+                    const codeBlockMatch = solution.match(/```(?:cpp|c\+\+)?\s*([\s\S]*?)\s*```/);
+                    
+                    if (codeBlockMatch) {
+                        // 从代码块中提取
+                        extractedCode = codeBlockMatch[1].trim();
+                    } else {
+                        // 如果没有代码块标记，尝试识别代码部分
+                        const lines = solution.split('\n');
+                        const codeLines = lines.filter(line => 
+                            !line.startsWith('#') && // 不是Markdown标题
+                            !line.match(/^[A-Za-z][\w\s]+:/) && // 不是标签行
+                            !line.match(/^(\d+\.|\*|\-)\s/) // 不是列表项
+                        );
+                        extractedCode = codeLines.join('\n').trim();
+                    }
+                    
+                    // 验证提取的代码是否看起来像有效的C++代码
+                    if (!this.looksLikeCppCode(extractedCode)) {
+                        console.log('生成的内容不像有效的C++代码，尝试重新提取');
+                        // 如果不像有效代码，尝试一个简单的启发式方法：找到第一个#include和最后一个}之间的所有内容
+                        const includeIndex = solution.indexOf('#include');
+                        if (includeIndex >= 0) {
+                            const lastBraceIndex = solution.lastIndexOf('}');
+                            if (lastBraceIndex > includeIndex) {
+                                extractedCode = solution.substring(includeIndex, lastBraceIndex + 1).trim();
+                            }
+                        }
+                    }
+                    
+                    // 如果代码仍然为空或太短，返回整个响应
+                    if (!extractedCode || extractedCode.length < 50) {
+                        return solution.trim();
+                    }
+                    
+                    return extractedCode;
+                } catch (error) {
+                    vscode.window.showErrorMessage(`生成解答失败: ${error instanceof Error ? error.message : String(error)}`);
+                    return undefined;
+                }
+            });
+        } catch (error) {
+            console.error('生成解答时出错:', error);
+            vscode.window.showErrorMessage(`生成解答时出错: ${error instanceof Error ? error.message : String(error)}`);
+            return undefined;
+        }
+    }
+    
+    /**
+     * 检查文本是否看起来像有效的C++代码
+     */
+    private looksLikeCppCode(text: string): boolean {
+        // 检查是否包含常见的C++代码模式
+        const hasInclude = /#include\s*</.test(text);
+        const hasMainFunction = /\bint\s+main\s*\(/.test(text);
+        const hasTypicalSyntax = /\b(if|for|while|return|void|int|string|vector)\b/.test(text);
+        const hasCurlyBraces = /{/.test(text) && /}/.test(text);
+        
+        // 至少满足部分条件
+        return (hasInclude || hasMainFunction) && hasTypicalSyntax && hasCurlyBraces;
+    }
+    
+    /**
+     * 获取指定问题ID的代码模板
+     */
+    private async getProblemTemplate(problemId: string): Promise<string | undefined> {
+        // 为常见题目提供模板
+        const templates: Record<string, string> = {
+            '1': `#include <iostream>
+#include <vector>
+#include <nlohmann/json.hpp>
+using namespace std;
+using json = nlohmann::json;
+
+int main() {
+    // 读取输入数组和目标值
+    vector<int> nums;
+    int num, target;
+    
+    // 读取所有输入数字，直到EOF
+    while (cin >> num) {
+        nums.push_back(num);
+    }
+    
+    // 最后一个数字是目标和
+    if (!nums.empty()) {
+        target = nums.back();
+        nums.pop_back();  // 从数组中移除目标和
+    }
+    
+    // TODO: 在这里实现你的解决方案
+    // 要求：找到两个数的和等于target，返回它们的下标
+    
+    // 输出结果
+    json result = json::array({0, 1});  // 替换成实际找到的下标
+    cout << result << endl;
+    
+    return 0;
+}`,
+            '2': `#include <iostream>
+#include <string>
+using namespace std;
+
+int main() {
+    int x;
+    cin >> x;
+    
+    // TODO: 在这里实现你的解决方案
+    // 要求：判断x是否为回文数
+    
+    // 输出结果
+    cout << "true" << endl;  // 或 cout << "false" << endl;
+    
+    return 0;
+}`,
+        };
+        
+        return templates[problemId];
+    }
 }
 
 /**

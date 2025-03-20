@@ -79,6 +79,20 @@
         "command": "programmingPractice.toggleAIAnalysis",
         "title": "切换AI代码分析",
         "icon": "$(sparkle)"
+      },
+      {
+        "command": "programmingPractice.toggleAICodeCompletion",
+        "title": "切换AI代码补全",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "programmingPractice.toggleTabCompletion",
+        "title": "切换Tab智能补全",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "programmingPractice.triggerTabCompletion",
+        "title": "触发智能Tab补全"
       }
     ],
     "menus": {
@@ -94,9 +108,26 @@
           "command": "programmingPractice.aiAnalyzeCode",
           "when": "editorLangId == cpp || editorLangId == c",
           "group": "7_modification"
+        },
+        {
+          "command": "programmingPractice.toggleAICodeCompletion",
+          "when": "editorLangId == cpp || editorLangId == c",
+          "group": "7_modification"
+        },
+        {
+          "command": "programmingPractice.toggleTabCompletion",
+          "when": "editorLangId == cpp || editorLangId == c",
+          "group": "7_modification"
         }
       ]
     },
+    "keybindings": [
+      {
+        "command": "programmingPractice.triggerTabCompletion",
+        "key": "alt+tab",
+        "when": "editorTextFocus && editorLangId =~ /(cpp|c)/ && !inSnippetMode && !suggestWidgetVisible && !hasSnippetCompletions"
+      }
+    ],
     "configuration": {
       "title": "C++ Programming Practice",
       "properties": {
@@ -144,18 +175,18 @@
         },
         "programmingPractice.aiApiKey": {
           "type": "string",
-          "default": "ipzotlGevNqQsafvWSXi:cooExiNRkHtQtHkkIqNk",
+          "default": "sk-jcvoeonbuuovidkgtlsesuzvivuqztinzmhrpvtahxqwyfhm",
           "description": "AI大模型API密钥"
         },
         "programmingPractice.aiApiEndpoint": {
           "type": "string",
-          "default": "https://spark-api-open.xf-yun.com/v1/chat/completions",
+          "default": "https://api.siliconflow.cn/v1/chat/completions",
           "description": "AI大模型API终端点"
         },
         "programmingPractice.aiModelName": {
           "type": "string",
-          "default": "lite",
-          "enum": ["lite"],
+          "default": "Qwen/Qwen2.5-Coder-7B-Instruct",
+          "enum": ["Qwen/Qwen2.5-Coder-7B-Instruct"],
           "description": "使用的AI模型名称"
         },
         "programmingPractice.aiMaxFileSizeKB": {
@@ -167,6 +198,31 @@
           "type": "number",
           "default": 2000,
           "description": "AI API调用最小间隔时间（毫秒）"
+        },
+        "programmingPractice.enableAICodeCompletion": {
+          "type": "boolean",
+          "default": false,
+          "description": "启用AI代码补全功能"
+        },
+        "programmingPractice.enableTabCompletion": {
+          "type": "boolean",
+          "default": false,
+          "description": "启用Tab键触发的AI智能补全"
+        },
+        "programmingPractice.completionDelay": {
+          "type": "number",
+          "default": 500,
+          "description": "AI代码补全触发延迟（毫秒）"
+        },
+        "programmingPractice.completionMaxItems": {
+          "type": "number",
+          "default": 5,
+          "description": "AI代码补全显示的最大建议数量"
+        },
+        "programmingPractice.completionTriggerChars": {
+          "type": "number",
+          "default": 3,
+          "description": "触发AI代码补全的最小字符数"
         }
       }
     }

@@ -8,6 +8,7 @@ import { UserInfoViewProvider } from './userInfoView';
 import { CodingDataCollector } from './codingDataCollector';
 import { CppAnalyzer } from './cppAnalyzer';
 import { AICodeAnalyzer } from './aiCodeAnalyzer'; // 导入AI代码分析器
+import { AICodeCompletionProvider, AITabCompletionProvider, SmartCodeCompletionService } from './aiCodeCompletion'; // 导入AI代码补全
 
 export async function activate(context: vscode.ExtensionContext) {
     // 初始化C++代码分析器
@@ -17,6 +18,41 @@ export async function activate(context: vscode.ExtensionContext) {
     // 初始化AI代码分析器
     const aiCodeAnalyzer = AICodeAnalyzer.getInstance();
     aiCodeAnalyzer.initialize(context);
+    
+    // 检查设置，只有在明确启用时才初始化智能代码补全
+    const enableAICompletion = vscode.workspace.getConfiguration('programmingPractice').get('enableAICodeCompletion', false);
+    const enableTabCompletion = vscode.workspace.getConfiguration('programmingPractice').get('enableTabCompletion', false);
+    
+    if (enableAICompletion || enableTabCompletion) {
+        // 使用智能代码补全服务代替单独的Tab补全和代码补全
+        const smartCompletionService = SmartCodeCompletionService.getInstance();
+        smartCompletionService.initialize(context);
+        
+        // 只在明确启用时注册AI代码补全提供程序
+        if (enableAICompletion) {
+            const completionProvider = new AICodeCompletionProvider();
+            context.subscriptions.push(
+                vscode.languages.registerCompletionItemProvider(
+                    ['cpp', 'c'], 
+                    completionProvider,
+                    '.', ':', '>', '(', '[' // 触发字符
+                )
+            );
+        }
+    }
+    
+    // 注册修改后的Tab补全键绑定，使用Alt+Tab而不是Tab
+    context.subscriptions.push(
+        vscode.commands.registerCommand('programmingPractice.triggerTabCompletion', async () => {
+            if (enableTabCompletion) {
+                // 如果已经有补全显示，接受它，否则尝试获取新补全
+                await vscode.commands.executeCommand('programmingPractice.tabCompletion');
+            } else {
+                // 如果未启用Tab补全，执行默认Tab行为
+                await vscode.commands.executeCommand('tab');
+            }
+        })
+    );
 
     console.log('编程练习扩展已激活');
 
@@ -221,6 +257,44 @@ export async function activate(context: vscode.ExtensionContext) {
             const currentSetting = vscode.workspace.getConfiguration('programmingPractice').get('enableAIAnalysis');
             vscode.workspace.getConfiguration('programmingPractice').update('enableAIAnalysis', !currentSetting, vscode.ConfigurationTarget.Global);
             vscode.window.showInformationMessage(`AI代码分析已${!currentSetting ? '启用' : '禁用'}`);
+        }),
+        
+        vscode.commands.registerCommand('programmingPractice.toggleAICodeCompletion', () => {
+            const currentSetting = vscode.workspace.getConfiguration('programmingPractice').get('enableAICodeCompletion');
+            vscode.workspace.getConfiguration('programmingPractice').update('enableAICodeCompletion', !currentSetting, vscode.ConfigurationTarget.Global);
+            vscode.window.showInformationMessage(`AI代码补全已${!currentSetting ? '启用' : '禁用'}`);
+        }),
+        
+        vscode.commands.registerCommand('programmingPractice.toggleTabCompletion', () => {
+            const currentSetting = vscode.workspace.getConfiguration('programmingPractice').get('enableTabCompletion');
+            vscode.workspace.getConfiguration('programmingPractice').update('enableTabCompletion', !currentSetting, vscode.ConfigurationTarget.Global);
+            vscode.window.showInformationMessage(`Tab智能补全已${!currentSetting ? '启用' : '禁用'}`);
+        })
+    );
+
+    // 注册一个命令用于安全地开启AI功能
+    context.subscriptions.push(
+        vscode.commands.registerCommand('programmingPractice.safelyEnableAIFeatures', async () => {
+            // 显示确认对话框
+            const choice = await vscode.window.showInformationMessage(
+                '是否启用AI功能？这可能会改变某些键盘快捷键的行为。',
+                { modal: true },
+                '启用', '取消'
+            );
+            
+            if (choice === '启用') {
+                // 安全地启用AI功能
+                await vscode.workspace.getConfiguration('programmingPractice').update('enableAICodeCompletion', true, vscode.ConfigurationTarget.Global);
+                await vscode.workspace.getConfiguration('programmingPractice').update('enableAIAnalysis', true, vscode.ConfigurationTarget.Global);
+                // Tab补全可能会干扰输入，所以默认不启用
+                // await vscode.workspace.getConfiguration('programmingPractice').update('enableTabCompletion', true, vscode.ConfigurationTarget.Global);
+                
+                vscode.window.showInformationMessage('AI功能已启用，需要重新加载窗口以应用更改', '重新加载').then(selection => {
+                    if (selection === '重新加载') {
+                        vscode.commands.executeCommand('workbench.action.reloadWindow');
+                    }
+                });
+            }
         })
     );
 }
@@ -325,6 +399,10 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                             this.updateCode(code);
                         }
                         break;
+                    case 'requestAiSolution':
+                        // 调用AI生成解答
+                        await this.generateAiSolution();
+                        break;
                 }
             } catch (error) {
                 console.error('处理webview消息时出错:', error);
@@ -352,6 +430,45 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
             } catch (error) {
                 console.error('Failed to send message to webview:', error);
             }
+        }
+    }
+    
+    private async generateAiSolution() {
+        if (!this._currentProblem) {
+            await this._sendMessageToWebview({
+                command: 'validationResult',
+                success: false,
+                message: '请先选择一个问题再生成AI解答'
+            });
+            return;
+        }
+        
+        try {
+            // 使用AI代码分析器生成解答
+            const aiAnalyzer = AICodeAnalyzer.getInstance();
+            const solution = await aiAnalyzer.generateSolution(this._currentProblem.id, this._currentProblem.fullDescription);
+            
+            // 更新编辑器中的代码
+            if (solution) {
+                this.updateCode(solution);
+                await this._sendMessageToWebview({
+                    command: 'validationResult',
+                    success: true,
+                    message: 'AI已生成解答，请检查并根据需要修改。'
+                });
+            } else {
+                await this._sendMessageToWebview({
+                    command: 'validationResult',
+                    success: false,
+                    message: '无法生成AI解答。'
+                });
+            }
+        } catch (error) {
+            await this._sendMessageToWebview({
+                command: 'validationResult',
+                success: false,
+                message: `生成AI解答时出错: ${error instanceof Error ? error.message : String(error)}`
+            });
         }
     }
 
