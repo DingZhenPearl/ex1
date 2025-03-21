@@ -709,6 +709,27 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                     white-space: pre-wrap;
                     overflow-x: auto;
                 }
+                .button-container {
+                    display: flex;
+                    gap: 8px;
+                    margin-bottom: 8px;
+                }
+                .ai-button {
+                    background-color: var(--vscode-button-secondaryBackground, #444);
+                    color: var(--vscode-button-secondaryForeground, #fff);
+                    border: none;
+                    padding: 6px 12px;
+                    cursor: pointer;
+                    font-size: 13px;
+                    border-radius: 3px;
+                }
+                .ai-button:hover {
+                    background-color: var(--vscode-button-secondaryHoverBackground, #555);
+                }
+                .ai-button:disabled {
+                    opacity: 0.5;
+                    cursor: not-allowed;
+                }
             </style>
         </head>
         <body>
@@ -736,6 +757,12 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                 </div>
                 
                 <div class="editor-container">
+                    <!-- 添加AI生成代码按钮 -->
+                    <div class="button-container">
+                        <button id="ai-solution-button" class="ai-button" onclick="generateAiSolution()">
+                            <span id="ai-button-text">AI生成解答</span>
+                        </button>
+                    </div>
                     <textarea id="code-editor" spellcheck="false" placeholder="选择题目后，代码将在这里显示..."></textarea>
                 </div>
             </div>
@@ -750,6 +777,7 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
             <script>
                 const vscode = acquireVsCodeApi();
                 let currentProblemId = '';
+                let isGeneratingCode = false;
                 
                 // Initialize state
                 const state = vscode.getState() || { code: '' };
@@ -787,6 +815,11 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                             const resultDiv = document.getElementById('validation-result');
                             resultDiv.className = 'result-container';
                             resultDiv.textContent = '';
+
+                            // 启用AI生成按钮
+                            document.getElementById('ai-solution-button').disabled = false;
+                            document.getElementById('ai-button-text').textContent = 'AI生成解答';
+                            isGeneratingCode = false;
                             break;
                             
                         case 'updateCode':
@@ -803,6 +836,13 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                             
                             // Enable/disable submit button
                             document.getElementById('submit-button').disabled = false;
+                            
+                            // 如果这是AI生成代码的结果，恢复按钮状态
+                            if (isGeneratingCode) {
+                                document.getElementById('ai-solution-button').disabled = false;
+                                document.getElementById('ai-button-text').textContent = 'AI生成解答';
+                                isGeneratingCode = false;
+                            }
                             break;
                     }
                 });
@@ -822,6 +862,27 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                     vscode.postMessage({
                         command: 'submit',
                         code: code
+                    });
+                }
+
+                // 添加AI生成代码功能
+                function generateAiSolution() {
+                    if (!currentProblemId || isGeneratingCode) return;
+                    
+                    // 更新按钮状态
+                    const aiButton = document.getElementById('ai-solution-button');
+                    aiButton.disabled = true;
+                    document.getElementById('ai-button-text').textContent = '正在生成...';
+                    isGeneratingCode = true;
+                    
+                    // 清除之前的结果
+                    const resultDiv = document.getElementById('validation-result');
+                    resultDiv.className = 'result-container';
+                    resultDiv.textContent = '';
+                    
+                    // 发送生成解答请求
+                    vscode.postMessage({
+                        command: 'requestAiSolution'
                     });
                 }
             </script>
