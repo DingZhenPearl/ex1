@@ -433,32 +433,31 @@ ${code}
                 const apiKey = vscode.workspace.getConfiguration('programmingPractice').get('aiApiKey', '');
                 const apiEndpoint = vscode.workspace.getConfiguration('programmingPractice').get('aiApiEndpoint', '');
                 
-                // 准备上下文代码 - 获取更多上下文以确保代码完整性
+                // 使用整个文件作为上下文，而不仅仅是问题行周围的代码
+                const entireFileContent = document.getText();
                 const lineNumber = diagnostic.range.start.line;
-                // 增加上下文范围，从10行扩展到20行
-                const startLine = Math.max(0, lineNumber - 10);
-                const endLine = Math.min(document.lineCount - 1, lineNumber + 10);
                 
-                let contextCode = '';
-                for (let i = startLine; i <= endLine; i++) {
+                // 创建带有问题行标记的完整文件内容
+                let markedFileContent = '';
+                for (let i = 0; i < document.lineCount; i++) {
                     const line = document.lineAt(i).text;
                     if (i === lineNumber) {
-                        contextCode += `→ ${line}\n`; // 标记问题行
+                        markedFileContent += `→ ${line}\n`; // 标记问题行
                     } else {
-                        contextCode += `  ${line}\n`;
+                        markedFileContent += `  ${line}\n`;
                     }
                 }
                 
-                // 改进提示词，明确要求完整的代码片段
+                // 改进提示词，强调使用整个文件上下文进行分析
                 const prompt = `我需要修复以下C++代码中的问题。问题描述是: "${diagnostic.message}"。建议修复方法是: "${suggestionText}"。
 
-请提供完整的修复后代码片段，确保语法正确且完整，包括所有必要的花括号、分号等。问题行用→标记。
+我正在提供整个文件的内容，问题行用→标记。请分析整个文件上下文，包括所有函数、类定义和依赖关系，然后提供针对标记行的修复代码。
 
 \`\`\`cpp
-${contextCode}
+${markedFileContent}
 \`\`\`
 
-请提供修复后的完整代码片段 (注意：返回的代码必须是可直接编译的完整片段):`;
+请提供修复后的代码片段，确保语法正确且完整，与整个文件的其余部分保持一致：`;
                 
                 try {
                     // 延迟以尊重API速率限制
@@ -471,7 +470,7 @@ ${contextCode}
                     // 记录请求时间
                     this.lastRequestTime = Date.now();
                     
-                    // 调用API获取修复建议
+                    // 调用API获取修复建议，增加token限制以处理更大的文件
                     const response = await fetch(apiEndpoint, {
                         method: 'POST',
                         headers: {
@@ -481,11 +480,14 @@ ${contextCode}
                         body: JSON.stringify({
                             model: vscode.workspace.getConfiguration('programmingPractice').get('aiModelName', 'lite'),
                             messages: [
-                                { "role": "system", "content": "你是一个C++代码修复专家。请提供完整、可编译的代码片段来修复问题，不要省略任何必要的代码部分，确保所有语法元素完整（如分号、花括号等）。" },
+                                { 
+                                    "role": "system", 
+                                    "content": "你是一个C++代码修复专家。请根据整个文件的上下文提供精确的修复代码。确保修复与周围代码风格一致，并保持代码的整体结构和语义。" 
+                                },
                                 { "role": "user", "content": prompt }
                             ],
                             temperature: 0.1,
-                            max_tokens: 2000 // 增加token限制以获取更完整的代码
+                            max_tokens: 4000 // 增加token限制以处理更大的文件和更复杂的修复
                         })
                     });
 
@@ -548,6 +550,8 @@ ${contextCode}
                             } catch (error) {
                                 vscode.window.showErrorMessage(`应用修复时出错: ${error instanceof Error ? error.message : String(error)}`);
                             }
+                        } else if (message.command === 'cancel') {
+                            panel.dispose();
                         }
                     });
                     
@@ -774,32 +778,35 @@ ${contextCode}
                 const apiKey = vscode.workspace.getConfiguration('programmingPractice').get('aiApiKey', '');
                 const apiEndpoint = vscode.workspace.getConfiguration('programmingPractice').get('aiApiEndpoint', '');
                 
-                // 准备上下文代码
+                // 使用整个文件作为上下文
+                const entireFileContent = document.getText();
                 const lineNumber = diagnostic.range.start.line;
-                const startLine = Math.max(0, lineNumber - 10);
-                const endLine = Math.min(document.lineCount - 1, lineNumber + 10);
                 
-                let contextCode = '';
-                for (let i = startLine; i <= endLine; i++) {
+                // 创建带有问题行标记的完整文件内容
+                let markedFileContent = '';
+                for (let i = 0; i < document.lineCount; i++) {
                     const line = document.lineAt(i).text;
                     if (i === lineNumber) {
-                        contextCode += `→ ${line}\n`; // 标记问题行
+                        markedFileContent += `→ ${line}\n`; // 标记问题行
                     } else {
-                        contextCode += `  ${line}\n`;
+                        markedFileContent += `  ${line}\n`;
                     }
                 }
                 
                 const prompt = `请详细解释以下C++代码中的问题并提供多种解决方案。问题描述是: "${diagnostic.message}"。
                 
-代码上下文:
+我正在提供整个文件的源代码，问题行用→标记。请分析整个文件上下文来更全面地理解问题。
+
+代码:
 \`\`\`cpp
-${contextCode}
+${markedFileContent}
 \`\`\`
 
 请提供:
 1. 问题的详细分析和为什么会引起这个错误
-2. 至少两种不同的修复方案，并解释每种方案的优缺点
-3. 可能的最佳实践和相关C++知识点`;
+2. 此问题如何影响整个程序的运行
+3. 至少两种不同的修复方案，并解释每种方案的优缺点
+4. 可能的最佳实践和相关C++知识点`;
                 
                 try {
                     // 延迟以尊重API速率限制
@@ -822,11 +829,11 @@ ${contextCode}
                         body: JSON.stringify({
                             model: vscode.workspace.getConfiguration('programmingPractice').get('aiModelName', 'lite'),
                             messages: [
-                                { "role": "system", "content": "你是一个熟练的C++编程教师，你的任务是帮助解释代码问题并提供多种解决方案。" },
+                                { "role": "system", "content": "你是一个熟练的C++编程教师，你的任务是基于完整源代码文件帮助解释代码问题并提供多种解决方案。" },
                                 { "role": "user", "content": prompt }
                             ],
                             temperature: 0.3,
-                            max_tokens: 2000
+                            max_tokens: 4000 // 增加token限制以处理更大的文件和更详细的解释
                         })
                     });
 
@@ -858,8 +865,6 @@ ${contextCode}
             vscode.window.showErrorMessage(`获取AI帮助时出错: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
-
-    // This method is intentionally removed as it was a duplicate implementation
 
     /**
      * 获取AI额外帮助HTML
