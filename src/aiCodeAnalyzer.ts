@@ -448,7 +448,7 @@ ${code}
                     }
                 }
                 
-                // 改进提示词，强调使用整个文件上下文进行分析
+                // 改进提示词，明确指示只需要返回修改部分的代码
                 const prompt = `我需要修复以下C++代码中的问题。问题描述是: "${diagnostic.message}"。建议修复方法是: "${suggestionText}"。
 
 我正在提供整个文件的内容，问题行用→标记。请分析整个文件上下文，包括所有函数、类定义和依赖关系，然后提供针对标记行的修复代码。
@@ -457,7 +457,7 @@ ${code}
 ${markedFileContent}
 \`\`\`
 
-请提供修复后的代码片段，确保语法正确且完整，与整个文件的其余部分保持一致：`;
+请提供修复后的代码片段，确保语法正确且完整，与整个文件的其余部分保持一致。`;
                 
                 try {
                     // 延迟以尊重API速率限制
@@ -470,7 +470,7 @@ ${markedFileContent}
                     // 记录请求时间
                     this.lastRequestTime = Date.now();
                     
-                    // 调用API获取修复建议，增加token限制以处理更大的文件
+                    // 调用API获取修复建议
                     const response = await fetch(apiEndpoint, {
                         method: 'POST',
                         headers: {
@@ -523,69 +523,13 @@ ${markedFileContent}
                     
                     panel.webview.html = this.getFixSuggestionHtml(diagnostic.message, suggestionText, fixedCode);
                     
-                    // 处理应用修复的消息
+                    // 处理webview消息
                     panel.webview.onDidReceiveMessage(async message => {
-                        if (message.command === 'applyFix') {
-                            try {
-                                const edit = new vscode.WorkspaceEdit();
-                                const problemLine = diagnostic.range.start.line;
-                                const problemLineText = document.lineAt(problemLine).text;
-                                const fixedCode = message.fixedCode;
-
-                                // 分析修复代码的结构
-                                const codeLines = fixedCode.split('\n');
-                                const isMultiline = codeLines.length > 1;
-                                
-                                // 获取当前行的缩进
-                                const currentIndent = problemLineText.match(/^\s*/)?.[0] || '';
-                                
-                                // 检查是否需要修改上下文
-                                const needsContextModification = this.needsContextModification(document, diagnostic, fixedCode);
-                                
-                                if (needsContextModification) {
-                                    // 扩展修改范围到相关的上下文
-                                    const modificationRange = this.getContextModificationRange(document, diagnostic);
-                                    const formattedCode = this.formatCodeWithContext(fixedCode, currentIndent);
-                                    edit.replace(document.uri, modificationRange, formattedCode);
-                                } else if (isMultiline) {
-                                    // 处理多行代码插入
-                                    const formattedCode = this.formatMultilineCode(codeLines, currentIndent);
-                                    
-                                    // 确定插入位置和范围
-                                    const insertRange = this.getMultilineInsertRange(document, diagnostic);
-                                    edit.replace(document.uri, insertRange, formattedCode);
-                                } else {
-                                    // 处理单行代码修改
-                                    const formattedCode = this.formatSingleLineCode(fixedCode, currentIndent);
-                                    
-                                    // 智能判断替换范围
-                                    const replaceRange = this.getSingleLineReplaceRange(document, diagnostic);
-                                    edit.replace(document.uri, replaceRange, formattedCode);
-                                }
-                                
-                                // 应用编辑
-                                await vscode.workspace.applyEdit(edit);
-                                
-                                // 格式化修改后的代码区域
-                                const editor = vscode.window.activeTextEditor;
-                                if (editor) {
-                                    const startLine = diagnostic.range.start.line;
-                                    const endLine = diagnostic.range.end.line + (isMultiline ? codeLines.length - 1 : 0);
-                                    const formatRange = new vscode.Range(
-                                        new vscode.Position(startLine, 0),
-                                        new vscode.Position(endLine, document.lineAt(endLine).text.length)
-                                    );
-                                    await vscode.commands.executeCommand('editor.action.formatSelection', {
-                                        range: formatRange
-                                    });
-                                }
-
-                                vscode.window.showInformationMessage('已应用AI修复');
-                                panel.dispose();
-                            } catch (error) {
-                                vscode.window.showErrorMessage(`应用修复时出错: ${error instanceof Error ? error.message : String(error)}`);
-                            }
-                        } else if (message.command === 'cancel') {
+                        if (message.command === 'copyCode') {
+                            // 复制代码到剪贴板
+                            await vscode.env.clipboard.writeText(message.code);
+                            vscode.window.showInformationMessage('已复制修复代码到剪贴板');
+                        } else if (message.command === 'close') {
                             panel.dispose();
                         }
                     });
@@ -600,160 +544,146 @@ ${markedFileContent}
     }
 
     /**
-     * 检查是否需要修改上下文代码
+     * 获取AI修复建议HTML
      */
-    private needsContextModification(document: vscode.TextDocument, diagnostic: vscode.Diagnostic, fixedCode: string): boolean {
-        // 检查修复是否影响代码结构
-        const structuralKeywords = [
-            'if', 'else', 'for', 'while', 'do', 'switch', 'case',
-            'class', 'struct', 'namespace', 'try', 'catch', 'finally'
-        ];
-        
-        const affectsStructure = structuralKeywords.some(keyword => 
-            fixedCode.includes(keyword) || 
-            document.lineAt(diagnostic.range.start.line).text.includes(keyword)
-        );
-        
-        // 检查是否涉及大括号的修改
-        const bracesChange = (fixedCode.match(/{/g) || []).length !== (fixedCode.match(/}/g) || []).length;
-        
-        return affectsStructure || bracesChange;
-    }
-
-    /**
-     * 获取需要修改的上下文范围
-     */
-    private getContextModificationRange(document: vscode.TextDocument, diagnostic: vscode.Diagnostic): vscode.Range {
-        let startLine = diagnostic.range.start.line;
-        let endLine = diagnostic.range.end.line;
-        
-        // 向上搜索相关代码块的开始
-        for (let i = startLine - 1; i >= 0; i--) {
-            const lineText = document.lineAt(i).text;
-            if (lineText.includes('{')) {
-                startLine = i;
-                break;
-            }
-            if (lineText.trim().length === 0) {
-                break;
-            }
-        }
-        
-        // 向下搜索相关代码块的结束
-        for (let i = endLine + 1; i < document.lineCount; i++) {
-            const lineText = document.lineAt(i).text;
-            if (lineText.includes('}')) {
-                endLine = i;
-                break;
-            }
-            if (lineText.trim().length === 0) {
-                break;
-            }
-        }
-        
-        return new vscode.Range(
-            new vscode.Position(startLine, 0),
-            new vscode.Position(endLine, document.lineAt(endLine).text.length)
-        );
-    }
-
-    /**
-     * 格式化包含上下文的代码
-     */
-    private formatCodeWithContext(code: string, baseIndent: string): string {
-        // 分析代码的缩进结构
-        const lines = code.split('\n');
-        let indentLevel = 0;
-        
-        return lines.map(line => {
-            const trimmedLine = line.trim();
+    private getFixSuggestionHtml(problemMessage: string, suggestion: string, fixedCode: string): string {
+        return `<!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
+            <style>
+                body {
+                    padding: 20px;
+                    font-family: var(--vscode-font-family);
+                    color: var(--vscode-foreground);
+                    line-height: 1.6;
+                    max-height: 100vh;
+                    overflow-y: hidden;
+                    display: flex;
+                    flex-direction: column;
+                }
+                .problem {
+                    background-color: var(--vscode-inputValidation-errorBackground);
+                    border: 1px solid var(--vscode-inputValidation-errorBorder);
+                    padding: 10px;
+                    margin-bottom: 15px;
+                    border-radius: 5px;
+                }
+                .suggestion {
+                    background-color: var(--vscode-inputValidation-infoBackground);
+                    border: 1px solid var(--vscode-inputValidation-infoBorder);
+                    padding: 10px;
+                    margin-bottom: 15px;
+                    border-radius: 5px;
+                }
+                .fixed-code-container {
+                    flex: 1;
+                    overflow-y: auto;
+                    margin-bottom: 15px;
+                }
+                .editor-container {
+                    height: 300px;
+                    margin-bottom: 15px;
+                }
+                #codeEditor {
+                    height: 100%;
+                    width: 100%;
+                    border: 1px solid var(--vscode-input-border);
+                    font-family: 'Consolas', 'Courier New', monospace;
+                    padding: 8px;
+                    color: var(--vscode-editor-foreground);
+                    background-color: var(--vscode-editor-background);
+                }
+                .button-container {
+                    display: flex;
+                    justify-content: space-between;
+                    gap: 10px;
+                    margin-top: auto;
+                }
+                button {
+                    background-color: var(--vscode-button-background);
+                    color: var(--vscode-button-foreground);
+                    border: none;
+                    padding: 8px 12px;
+                    cursor: pointer;
+                    border-radius: 3px;
+                }
+                button:hover {
+                    background-color: var(--vscode-button-hoverBackground);
+                }
+                .title {
+                    font-size: 1.2em;
+                    font-weight: bold;
+                    margin-bottom: 5px;
+                    color: var(--vscode-editor-foreground);
+                }
+                .info-text {
+                    font-style: italic;
+                    color: var(--vscode-descriptionForeground);
+                    margin-bottom: 10px;
+                }
+                .line-number {
+                    background-color: var(--vscode-editorLineNumber-foreground);
+                    color: var(--vscode-editor-background);
+                    padding: 2px 6px;
+                    border-radius: 10px;
+                    font-size: 0.8em;
+                    margin-left: 5px;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="title">代码问题:</div>
+            <div class="problem">${problemMessage}</div>
             
-            // 调整缩进级别
-            if (trimmedLine.endsWith('{')) {
-                const formatted = baseIndent + '    '.repeat(indentLevel) + trimmedLine;
-                indentLevel++;
-                return formatted;
-            } else if (trimmedLine.startsWith('}')) {
-                indentLevel = Math.max(0, indentLevel - 1);
-                return baseIndent + '    '.repeat(indentLevel) + trimmedLine;
-            }
+            <div class="title">建议修复:</div>
+            <div class="suggestion">${suggestion}</div>
             
-            return baseIndent + '    '.repeat(indentLevel) + trimmedLine;
-        }).join('\n');
-    }
-
-    /**
-     * 获取多行代码插入的范围
-     */
-    private getMultilineInsertRange(document: vscode.TextDocument, diagnostic: vscode.Diagnostic): vscode.Range {
-        const startLine = diagnostic.range.start.line;
-        const endLine = diagnostic.range.end.line;
-        
-        // 扩展范围以包含完整的语句或代码块
-        let rangeStartLine = startLine;
-        let rangeEndLine = endLine;
-        
-        // 向上查找语句开始
-        for (let i = startLine - 1; i >= 0; i--) {
-            const lineText = document.lineAt(i).text.trim();
-            if (lineText.endsWith('{') || lineText.endsWith(';') || lineText.length === 0) {
-                rangeStartLine = i + 1;
-                break;
-            }
-        }
-        
-        // 向下查找语句结束
-        for (let i = endLine + 1; i < document.lineCount; i++) {
-            const lineText = document.lineAt(i).text.trim();
-            if (lineText.endsWith('}') || lineText.endsWith(';') || lineText.length === 0) {
-                rangeEndLine = i;
-                break;
-            }
-        }
-        
-        return new vscode.Range(
-            new vscode.Position(rangeStartLine, 0),
-            new vscode.Position(rangeEndLine, document.lineAt(rangeEndLine).text.length)
-        );
-    }
-
-    /**
-     * 格式化多行代码
-     */
-    private formatMultilineCode(codeLines: string[], baseIndent: string): string {
-        let indentLevel = 0;
-        return codeLines.map(line => {
-            const trimmedLine = line.trim();
-            if (trimmedLine.endsWith('{')) {
-                return baseIndent + '    '.repeat(indentLevel++) + trimmedLine;
-            } else if (trimmedLine.startsWith('}')) {
-                return baseIndent + '    '.repeat(--indentLevel) + trimmedLine;
-            }
-            return baseIndent + '    '.repeat(indentLevel) + trimmedLine;
-        }).join('\n');
-    }
-
-    /**
-     * 获取单行代码替换的范围
-     */
-    private getSingleLineReplaceRange(document: vscode.TextDocument, diagnostic: vscode.Diagnostic): vscode.Range {
-        const line = document.lineAt(diagnostic.range.start.line);
-        
-        // 如果诊断范围覆盖了大部分行，则替换整行
-        if (diagnostic.range.start.character <= line.firstNonWhitespaceCharacterIndex + 2 && 
-            diagnostic.range.end.character >= line.text.trim().length - 2) {
-            return line.range;
-        }
-        
-        // 否则只替换诊断范围
-        return diagnostic.range;
-    }
-
-    /**
-     * 格式化单行代码
-     */
-    private formatSingleLineCode(code: string, baseIndent: string): string {
-        return baseIndent + code.trim();
+            <div class="info-text">请手动复制下面的修复代码并在编辑器中应用:</div>
+            
+            <div class="title">AI生成的修复代码:</div>
+            <div class="editor-container">
+                <textarea id="codeEditor" spellcheck="false">${fixedCode}</textarea>
+            </div>
+            
+            <div class="button-container">
+                <button id="closeButton">关闭</button>
+                <button id="copyButton">复制代码</button>
+            </div>
+            
+            <script>
+                const vscode = acquireVsCodeApi();
+                
+                // 允许用户编辑生成的代码
+                const editor = document.getElementById('codeEditor');
+                
+                // 复制按钮点击事件
+                document.getElementById('copyButton').addEventListener('click', () => {
+                    const code = editor.value;
+                    vscode.postMessage({
+                        command: 'copyCode',
+                        code: code
+                    });
+                });
+                
+                // 关闭按钮点击事件
+                document.getElementById('closeButton').addEventListener('click', () => {
+                    vscode.postMessage({ command: 'close' });
+                });
+                
+                // 自动调整文本区域大小以适应内容
+                function adjustTextareaHeight() {
+                    editor.style.height = 'auto';
+                    editor.style.height = Math.min(400, editor.scrollHeight) + 'px';
+                }
+                
+                // 初始调整和输入时调整
+                adjustTextareaHeight();
+                editor.addEventListener('input', adjustTextareaHeight);
+            </script>
+        </body>
+        </html>`;
     }
 
     /**
@@ -815,146 +745,6 @@ ${markedFileContent}
         }
         
         return fixedCode;
-    }
-
-    /**
-     * 获取AI修复建议HTML
-     */
-    private getFixSuggestionHtml(problemMessage: string, suggestion: string, fixedCode: string): string {
-        return `<!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
-            <style>
-                body {
-                    padding: 20px;
-                    font-family: var(--vscode-font-family);
-                    color: var(--vscode-foreground);
-                    line-height: 1.6;
-                    max-height: 100vh;
-                    overflow-y: hidden;
-                    display: flex;
-                    flex-direction: column;
-                }
-                .problem {
-                    background-color: var(--vscode-inputValidation-errorBackground);
-                    border: 1px solid var(--vscode-inputValidation-errorBorder);
-                    padding: 10px;
-                    margin-bottom: 15px;
-                    border-radius: 5px;
-                }
-                .suggestion {
-                    background-color: var(--vscode-inputValidation-infoBackground);
-                    border: 1px solid var(--vscode-inputValidation-infoBorder);
-                    padding: 10px;
-                    margin-bottom: 15px;
-                    border-radius: 5px;
-                }
-                .fixed-code-container {
-                    flex: 1;
-                    overflow-y: auto;
-                    margin-bottom: 15px;
-                }
-                .fixed-code {
-                    background-color: var(--vscode-editor-background);
-                    color: var(--vscode-editor-foreground);
-                    border: 1px solid var(--vscode-input-border);
-                    padding: 10px;
-                    white-space: pre;
-                    overflow-x: auto;
-                    font-family: 'Consolas', 'Courier New', monospace;
-                    min-height: 200px;
-                    max-height: 400px;
-                    border-radius: 5px;
-                }
-                .button-container {
-                    display: flex;
-                    justify-content: space-between;
-                    gap: 10px;
-                    margin-top: auto;
-                }
-                button {
-                    background-color: var(--vscode-button-background);
-                    color: var(--vscode-button-foreground);
-                    border: none;
-                    padding: 8px 12px;
-                    cursor: pointer;
-                    border-radius: 3px;
-                }
-                button:hover {
-                    background-color: var(--vscode-button-hoverBackground);
-                }
-                .title {
-                    font-size: 1.2em;
-                    font-weight: bold;
-                    margin-bottom: 5px;
-                    color: var(--vscode-editor-foreground);
-                }
-                .editor-container {
-                    height: 300px;
-                    margin-bottom: 15px;
-                }
-                #codeEditor {
-                    height: 100%;
-                    width: 100%;
-                    border: 1px solid var(--vscode-input-border);
-                    font-family: 'Consolas', 'Courier New', monospace;
-                    padding: 8px;
-                    color: var(--vscode-editor-foreground);
-                    background-color: var(--vscode-editor-background);
-                }
-            </style>
-        </head>
-        <body>
-            <div class="title">代码问题:</div>
-            <div class="problem">${problemMessage}</div>
-            
-            <div class="title">建议修复:</div>
-            <div class="suggestion">${suggestion}</div>
-            
-            <div class="title">AI生成的修复代码:</div>
-            <div class="editor-container">
-                <textarea id="codeEditor" spellcheck="false">${fixedCode}</textarea>
-            </div>
-            
-            <div class="button-container">
-                <button id="cancelButton">取消</button>
-                <button id="applyButton">应用修复</button>
-            </div>
-            
-            <script>
-                const vscode = acquireVsCodeApi();
-                
-                // 允许用户编辑生成的代码
-                const editor = document.getElementById('codeEditor');
-                
-                // 应用按钮点击事件
-                document.getElementById('applyButton').addEventListener('click', () => {
-                    const fixedCode = editor.value;
-                    vscode.postMessage({
-                        command: 'applyFix',
-                        fixedCode: fixedCode
-                    });
-                });
-                
-                // 取消按钮点击事件
-                document.getElementById('cancelButton').addEventListener('click', () => {
-                    vscode.postMessage({ command: 'cancel' });
-                });
-                
-                // 自动调整文本区域大小以适应内容
-                function adjustTextareaHeight() {
-                    editor.style.height = 'auto';
-                    editor.style.height = Math.min(400, editor.scrollHeight) + 'px';
-                }
-                
-                // 初始调整和输入时调整
-                adjustTextareaHeight();
-                editor.addEventListener('input', adjustTextareaHeight);
-            </script>
-        </body>
-        </html>`;
     }
 
     /**
