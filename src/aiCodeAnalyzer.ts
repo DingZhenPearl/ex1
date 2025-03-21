@@ -527,24 +527,59 @@ ${markedFileContent}
                     panel.webview.onDidReceiveMessage(async message => {
                         if (message.command === 'applyFix') {
                             try {
-                                // 应用修复
                                 const edit = new vscode.WorkspaceEdit();
-                                
-                                // 判断是替换整行还是部分内容
                                 const problemLine = diagnostic.range.start.line;
                                 const problemLineText = document.lineAt(problemLine).text;
+                                const fixedCode = message.fixedCode;
+
+                                // 分析修复代码的结构
+                                const codeLines = fixedCode.split('\n');
+                                const isMultiline = codeLines.length > 1;
                                 
-                                // 如果诊断范围覆盖整行，则替换整行
-                                if (diagnostic.range.start.character === 0 && 
-                                    diagnostic.range.end.character >= problemLineText.length - 1) {
-                                    const lineRange = document.lineAt(problemLine).range;
-                                    edit.replace(document.uri, lineRange, message.fixedCode);
+                                // 获取当前行的缩进
+                                const currentIndent = problemLineText.match(/^\s*/)?.[0] || '';
+                                
+                                // 检查是否需要修改上下文
+                                const needsContextModification = this.needsContextModification(document, diagnostic, fixedCode);
+                                
+                                if (needsContextModification) {
+                                    // 扩展修改范围到相关的上下文
+                                    const modificationRange = this.getContextModificationRange(document, diagnostic);
+                                    const formattedCode = this.formatCodeWithContext(fixedCode, currentIndent);
+                                    edit.replace(document.uri, modificationRange, formattedCode);
+                                } else if (isMultiline) {
+                                    // 处理多行代码插入
+                                    const formattedCode = this.formatMultilineCode(codeLines, currentIndent);
+                                    
+                                    // 确定插入位置和范围
+                                    const insertRange = this.getMultilineInsertRange(document, diagnostic);
+                                    edit.replace(document.uri, insertRange, formattedCode);
                                 } else {
-                                    // 否则仅替换诊断范围内的内容
-                                    edit.replace(document.uri, diagnostic.range, message.fixedCode);
+                                    // 处理单行代码修改
+                                    const formattedCode = this.formatSingleLineCode(fixedCode, currentIndent);
+                                    
+                                    // 智能判断替换范围
+                                    const replaceRange = this.getSingleLineReplaceRange(document, diagnostic);
+                                    edit.replace(document.uri, replaceRange, formattedCode);
                                 }
                                 
+                                // 应用编辑
                                 await vscode.workspace.applyEdit(edit);
+                                
+                                // 格式化修改后的代码区域
+                                const editor = vscode.window.activeTextEditor;
+                                if (editor) {
+                                    const startLine = diagnostic.range.start.line;
+                                    const endLine = diagnostic.range.end.line + (isMultiline ? codeLines.length - 1 : 0);
+                                    const formatRange = new vscode.Range(
+                                        new vscode.Position(startLine, 0),
+                                        new vscode.Position(endLine, document.lineAt(endLine).text.length)
+                                    );
+                                    await vscode.commands.executeCommand('editor.action.formatSelection', {
+                                        range: formatRange
+                                    });
+                                }
+
                                 vscode.window.showInformationMessage('已应用AI修复');
                                 panel.dispose();
                             } catch (error) {
@@ -562,6 +597,163 @@ ${markedFileContent}
         } catch (error) {
             vscode.window.showErrorMessage(`应用AI建议时出错: ${error instanceof Error ? error.message : String(error)}`);
         }
+    }
+
+    /**
+     * 检查是否需要修改上下文代码
+     */
+    private needsContextModification(document: vscode.TextDocument, diagnostic: vscode.Diagnostic, fixedCode: string): boolean {
+        // 检查修复是否影响代码结构
+        const structuralKeywords = [
+            'if', 'else', 'for', 'while', 'do', 'switch', 'case',
+            'class', 'struct', 'namespace', 'try', 'catch', 'finally'
+        ];
+        
+        const affectsStructure = structuralKeywords.some(keyword => 
+            fixedCode.includes(keyword) || 
+            document.lineAt(diagnostic.range.start.line).text.includes(keyword)
+        );
+        
+        // 检查是否涉及大括号的修改
+        const bracesChange = (fixedCode.match(/{/g) || []).length !== (fixedCode.match(/}/g) || []).length;
+        
+        return affectsStructure || bracesChange;
+    }
+
+    /**
+     * 获取需要修改的上下文范围
+     */
+    private getContextModificationRange(document: vscode.TextDocument, diagnostic: vscode.Diagnostic): vscode.Range {
+        let startLine = diagnostic.range.start.line;
+        let endLine = diagnostic.range.end.line;
+        
+        // 向上搜索相关代码块的开始
+        for (let i = startLine - 1; i >= 0; i--) {
+            const lineText = document.lineAt(i).text;
+            if (lineText.includes('{')) {
+                startLine = i;
+                break;
+            }
+            if (lineText.trim().length === 0) {
+                break;
+            }
+        }
+        
+        // 向下搜索相关代码块的结束
+        for (let i = endLine + 1; i < document.lineCount; i++) {
+            const lineText = document.lineAt(i).text;
+            if (lineText.includes('}')) {
+                endLine = i;
+                break;
+            }
+            if (lineText.trim().length === 0) {
+                break;
+            }
+        }
+        
+        return new vscode.Range(
+            new vscode.Position(startLine, 0),
+            new vscode.Position(endLine, document.lineAt(endLine).text.length)
+        );
+    }
+
+    /**
+     * 格式化包含上下文的代码
+     */
+    private formatCodeWithContext(code: string, baseIndent: string): string {
+        // 分析代码的缩进结构
+        const lines = code.split('\n');
+        let indentLevel = 0;
+        
+        return lines.map(line => {
+            const trimmedLine = line.trim();
+            
+            // 调整缩进级别
+            if (trimmedLine.endsWith('{')) {
+                const formatted = baseIndent + '    '.repeat(indentLevel) + trimmedLine;
+                indentLevel++;
+                return formatted;
+            } else if (trimmedLine.startsWith('}')) {
+                indentLevel = Math.max(0, indentLevel - 1);
+                return baseIndent + '    '.repeat(indentLevel) + trimmedLine;
+            }
+            
+            return baseIndent + '    '.repeat(indentLevel) + trimmedLine;
+        }).join('\n');
+    }
+
+    /**
+     * 获取多行代码插入的范围
+     */
+    private getMultilineInsertRange(document: vscode.TextDocument, diagnostic: vscode.Diagnostic): vscode.Range {
+        const startLine = diagnostic.range.start.line;
+        const endLine = diagnostic.range.end.line;
+        
+        // 扩展范围以包含完整的语句或代码块
+        let rangeStartLine = startLine;
+        let rangeEndLine = endLine;
+        
+        // 向上查找语句开始
+        for (let i = startLine - 1; i >= 0; i--) {
+            const lineText = document.lineAt(i).text.trim();
+            if (lineText.endsWith('{') || lineText.endsWith(';') || lineText.length === 0) {
+                rangeStartLine = i + 1;
+                break;
+            }
+        }
+        
+        // 向下查找语句结束
+        for (let i = endLine + 1; i < document.lineCount; i++) {
+            const lineText = document.lineAt(i).text.trim();
+            if (lineText.endsWith('}') || lineText.endsWith(';') || lineText.length === 0) {
+                rangeEndLine = i;
+                break;
+            }
+        }
+        
+        return new vscode.Range(
+            new vscode.Position(rangeStartLine, 0),
+            new vscode.Position(rangeEndLine, document.lineAt(rangeEndLine).text.length)
+        );
+    }
+
+    /**
+     * 格式化多行代码
+     */
+    private formatMultilineCode(codeLines: string[], baseIndent: string): string {
+        let indentLevel = 0;
+        return codeLines.map(line => {
+            const trimmedLine = line.trim();
+            if (trimmedLine.endsWith('{')) {
+                return baseIndent + '    '.repeat(indentLevel++) + trimmedLine;
+            } else if (trimmedLine.startsWith('}')) {
+                return baseIndent + '    '.repeat(--indentLevel) + trimmedLine;
+            }
+            return baseIndent + '    '.repeat(indentLevel) + trimmedLine;
+        }).join('\n');
+    }
+
+    /**
+     * 获取单行代码替换的范围
+     */
+    private getSingleLineReplaceRange(document: vscode.TextDocument, diagnostic: vscode.Diagnostic): vscode.Range {
+        const line = document.lineAt(diagnostic.range.start.line);
+        
+        // 如果诊断范围覆盖了大部分行，则替换整行
+        if (diagnostic.range.start.character <= line.firstNonWhitespaceCharacterIndex + 2 && 
+            diagnostic.range.end.character >= line.text.trim().length - 2) {
+            return line.range;
+        }
+        
+        // 否则只替换诊断范围
+        return diagnostic.range;
+    }
+
+    /**
+     * 格式化单行代码
+     */
+    private formatSingleLineCode(code: string, baseIndent: string): string {
+        return baseIndent + code.trim();
     }
 
     /**
