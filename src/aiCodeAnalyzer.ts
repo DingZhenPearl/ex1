@@ -433,10 +433,11 @@ ${code}
                 const apiKey = vscode.workspace.getConfiguration('programmingPractice').get('aiApiKey', '');
                 const apiEndpoint = vscode.workspace.getConfiguration('programmingPractice').get('aiApiEndpoint', '');
                 
-                // 准备上下文代码
+                // 准备上下文代码 - 获取更多上下文以确保代码完整性
                 const lineNumber = diagnostic.range.start.line;
-                const startLine = Math.max(0, lineNumber - 5);
-                const endLine = Math.min(document.lineCount - 1, lineNumber + 5);
+                // 增加上下文范围，从10行扩展到20行
+                const startLine = Math.max(0, lineNumber - 10);
+                const endLine = Math.min(document.lineCount - 1, lineNumber + 10);
                 
                 let contextCode = '';
                 for (let i = startLine; i <= endLine; i++) {
@@ -448,14 +449,16 @@ ${code}
                     }
                 }
                 
+                // 改进提示词，明确要求完整的代码片段
                 const prompt = `我需要修复以下C++代码中的问题。问题描述是: "${diagnostic.message}"。建议修复方法是: "${suggestionText}"。
-请提供具体的修复代码，只返回修改后的代码段，不需要解释。问题行用→标记。
+
+请提供完整的修复后代码片段，确保语法正确且完整，包括所有必要的花括号、分号等。问题行用→标记。
 
 \`\`\`cpp
 ${contextCode}
 \`\`\`
 
-请提供修复后的代码段:`;
+请提供修复后的完整代码片段 (注意：返回的代码必须是可直接编译的完整片段):`;
                 
                 try {
                     // 延迟以尊重API速率限制
@@ -478,11 +481,11 @@ ${contextCode}
                         body: JSON.stringify({
                             model: vscode.workspace.getConfiguration('programmingPractice').get('aiModelName', 'lite'),
                             messages: [
-                                { "role": "system", "content": "你是一个C++代码修复助手。根据问题描述提供具体的修复代码。" },
+                                { "role": "system", "content": "你是一个C++代码修复专家。请提供完整、可编译的代码片段来修复问题，不要省略任何必要的代码部分，确保所有语法元素完整（如分号、花括号等）。" },
                                 { "role": "user", "content": prompt }
                             ],
                             temperature: 0.1,
-                            max_tokens: 1000
+                            max_tokens: 2000 // 增加token限制以获取更完整的代码
                         })
                     });
 
@@ -493,11 +496,22 @@ ${contextCode}
                     const data = await response.json();
                     const fixSuggestion = data.choices[0].message.content;
                     
-                    // 提取代码片段
+                    // 提取代码片段并进行验证
+                    let fixedCode = '';
                     const codeMatch = fixSuggestion.match(/```(?:cpp)?\s*([\s\S]*?)\s*```/);
-                    const fixedCode = codeMatch ? codeMatch[1].trim() : fixSuggestion.trim();
                     
-                    // 创建一个新的Webview来显示修复建议
+                    if (codeMatch) {
+                        // 从代码块中提取
+                        fixedCode = codeMatch[1].trim();
+                    } else {
+                        // 如果没有代码块标记，尝试提取整个响应
+                        fixedCode = fixSuggestion.trim();
+                    }
+                    
+                    // 增加代码验证和修复逻辑
+                    fixedCode = this.validateAndFixCode(fixedCode);
+                    
+                    // 创建一个新的Webview来显示修复建议，增加代码预览的高度
                     const panel = vscode.window.createWebviewPanel(
                         'aiCodeFix',
                         'AI代码修复建议',
@@ -510,16 +524,30 @@ ${contextCode}
                     // 处理应用修复的消息
                     panel.webview.onDidReceiveMessage(async message => {
                         if (message.command === 'applyFix') {
-                            // 应用修复
-                            const edit = new vscode.WorkspaceEdit();
-                            const problemLine = diagnostic.range.start.line;
-                            
-                            // 将修复后的代码插入到问题行
-                            edit.replace(document.uri, diagnostic.range, message.fixedCode);
-                            
-                            await vscode.workspace.applyEdit(edit);
-                            vscode.window.showInformationMessage('已应用AI修复');
-                            panel.dispose();
+                            try {
+                                // 应用修复
+                                const edit = new vscode.WorkspaceEdit();
+                                
+                                // 判断是替换整行还是部分内容
+                                const problemLine = diagnostic.range.start.line;
+                                const problemLineText = document.lineAt(problemLine).text;
+                                
+                                // 如果诊断范围覆盖整行，则替换整行
+                                if (diagnostic.range.start.character === 0 && 
+                                    diagnostic.range.end.character >= problemLineText.length - 1) {
+                                    const lineRange = document.lineAt(problemLine).range;
+                                    edit.replace(document.uri, lineRange, message.fixedCode);
+                                } else {
+                                    // 否则仅替换诊断范围内的内容
+                                    edit.replace(document.uri, diagnostic.range, message.fixedCode);
+                                }
+                                
+                                await vscode.workspace.applyEdit(edit);
+                                vscode.window.showInformationMessage('已应用AI修复');
+                                panel.dispose();
+                            } catch (error) {
+                                vscode.window.showErrorMessage(`应用修复时出错: ${error instanceof Error ? error.message : String(error)}`);
+                            }
                         }
                     });
                     
@@ -530,6 +558,207 @@ ${contextCode}
         } catch (error) {
             vscode.window.showErrorMessage(`应用AI建议时出错: ${error instanceof Error ? error.message : String(error)}`);
         }
+    }
+
+    /**
+     * 验证并修复代码片段中的常见问题
+     */
+    private validateAndFixCode(code: string): string {
+        if (!code) {
+            return code;
+        }
+        
+        // 修复常见的不完整代码问题
+        let fixedCode = code;
+        
+        // 1. 修复不完整的include语句
+        const incompleteInclude = fixedCode.match(/#include\s*$/m);
+        if (incompleteInclude) {
+            fixedCode = fixedCode.replace(/#include\s*$/m, '#include <iostream>');
+        }
+        
+        // 2. 修复不完整的cout语句
+        fixedCode = fixedCode.replace(/cout\s*<<\s*["'](.+?)["']\s*<$/gm, 'cout << "$1" << endl;');
+        
+        // 3. 检查是否有不匹配的括号
+        const openBraces = (fixedCode.match(/{/g) || []).length;
+        const closeBraces = (fixedCode.match(/}/g) || []).length;
+        
+        if (openBraces > closeBraces) {
+            // 添加缺少的右花括号
+            for (let i = 0; i < openBraces - closeBraces; i++) {
+                fixedCode += '\n}';
+            }
+        }
+        
+        // 4. 检查语句末尾的分号
+        const lines = fixedCode.split('\n');
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+            // 如果行以字母、数字、右括号、引号或右中括号结束，但没有分号，添加分号
+            if (line && 
+                !line.endsWith(';') && 
+                !line.endsWith('{') && 
+                !line.endsWith('}') && 
+                !line.endsWith(':') && 
+                !line.match(/^\s*#/) && // 不是预处理指令
+                !line.match(/^\s*\/\//) && // 不是注释
+                line.match(/[a-zA-Z0-9"'\])]$/)) {
+                lines[i] = lines[i] + ';';
+            }
+        }
+        fixedCode = lines.join('\n');
+        
+        // 5. 确保main函数有返回语句
+        if (fixedCode.includes('int main(') && !fixedCode.includes('return 0;')) {
+            // 查找最后一个右花括号的位置
+            const lastBraceIndex = fixedCode.lastIndexOf('}');
+            if (lastBraceIndex > 0) {
+                fixedCode = fixedCode.slice(0, lastBraceIndex) + '\n    return 0;\n' + fixedCode.slice(lastBraceIndex);
+            }
+        }
+        
+        return fixedCode;
+    }
+
+    /**
+     * 获取AI修复建议HTML
+     */
+    private getFixSuggestionHtml(problemMessage: string, suggestion: string, fixedCode: string): string {
+        return `<!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
+            <style>
+                body {
+                    padding: 20px;
+                    font-family: var(--vscode-font-family);
+                    color: var(--vscode-foreground);
+                    line-height: 1.6;
+                    max-height: 100vh;
+                    overflow-y: hidden;
+                    display: flex;
+                    flex-direction: column;
+                }
+                .problem {
+                    background-color: var(--vscode-inputValidation-errorBackground);
+                    border: 1px solid var(--vscode-inputValidation-errorBorder);
+                    padding: 10px;
+                    margin-bottom: 15px;
+                    border-radius: 5px;
+                }
+                .suggestion {
+                    background-color: var(--vscode-inputValidation-infoBackground);
+                    border: 1px solid var(--vscode-inputValidation-infoBorder);
+                    padding: 10px;
+                    margin-bottom: 15px;
+                    border-radius: 5px;
+                }
+                .fixed-code-container {
+                    flex: 1;
+                    overflow-y: auto;
+                    margin-bottom: 15px;
+                }
+                .fixed-code {
+                    background-color: var(--vscode-editor-background);
+                    color: var(--vscode-editor-foreground);
+                    border: 1px solid var(--vscode-input-border);
+                    padding: 10px;
+                    white-space: pre;
+                    overflow-x: auto;
+                    font-family: 'Consolas', 'Courier New', monospace;
+                    min-height: 200px;
+                    max-height: 400px;
+                    border-radius: 5px;
+                }
+                .button-container {
+                    display: flex;
+                    justify-content: space-between;
+                    gap: 10px;
+                    margin-top: auto;
+                }
+                button {
+                    background-color: var(--vscode-button-background);
+                    color: var(--vscode-button-foreground);
+                    border: none;
+                    padding: 8px 12px;
+                    cursor: pointer;
+                    border-radius: 3px;
+                }
+                button:hover {
+                    background-color: var(--vscode-button-hoverBackground);
+                }
+                .title {
+                    font-size: 1.2em;
+                    font-weight: bold;
+                    margin-bottom: 5px;
+                    color: var(--vscode-editor-foreground);
+                }
+                .editor-container {
+                    height: 300px;
+                    margin-bottom: 15px;
+                }
+                #codeEditor {
+                    height: 100%;
+                    width: 100%;
+                    border: 1px solid var(--vscode-input-border);
+                    font-family: 'Consolas', 'Courier New', monospace;
+                    padding: 8px;
+                    color: var(--vscode-editor-foreground);
+                    background-color: var(--vscode-editor-background);
+                }
+            </style>
+        </head>
+        <body>
+            <div class="title">代码问题:</div>
+            <div class="problem">${problemMessage}</div>
+            
+            <div class="title">建议修复:</div>
+            <div class="suggestion">${suggestion}</div>
+            
+            <div class="title">AI生成的修复代码:</div>
+            <div class="editor-container">
+                <textarea id="codeEditor" spellcheck="false">${fixedCode}</textarea>
+            </div>
+            
+            <div class="button-container">
+                <button id="cancelButton">取消</button>
+                <button id="applyButton">应用修复</button>
+            </div>
+            
+            <script>
+                const vscode = acquireVsCodeApi();
+                
+                // 允许用户编辑生成的代码
+                const editor = document.getElementById('codeEditor');
+                
+                // 应用按钮点击事件
+                document.getElementById('applyButton').addEventListener('click', () => {
+                    const fixedCode = editor.value;
+                    vscode.postMessage({
+                        command: 'applyFix',
+                        fixedCode: fixedCode
+                    });
+                });
+                
+                // 取消按钮点击事件
+                document.getElementById('cancelButton').addEventListener('click', () => {
+                    vscode.postMessage({ command: 'cancel' });
+                });
+                
+                // 自动调整文本区域大小以适应内容
+                function adjustTextareaHeight() {
+                    editor.style.height = 'auto';
+                    editor.style.height = Math.min(400, editor.scrollHeight) + 'px';
+                }
+                
+                // 初始调整和输入时调整
+                adjustTextareaHeight();
+                editor.addEventListener('input', adjustTextareaHeight);
+            </script>
+        </body>
+        </html>`;
     }
 
     /**
@@ -630,98 +859,7 @@ ${contextCode}
         }
     }
 
-    /**
-     * 获取AI修复建议HTML
-     */
-    private getFixSuggestionHtml(problemMessage: string, suggestion: string, fixedCode: string): string {
-        return `<!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
-            <style>
-                body {
-                    padding: 20px;
-                    font-family: var(--vscode-font-family);
-                    color: var(--vscode-foreground);
-                    line-height: 1.6;
-                }
-                .problem {
-                    background-color: var(--vscode-inputValidation-errorBackground);
-                    border: 1px solid var(--vscode-inputValidation-errorBorder);
-                    padding: 10px;
-                    margin-bottom: 15px;
-                    border-radius: 5px;
-                }
-                .suggestion {
-                    background-color: var(--vscode-inputValidation-infoBackground);
-                    border: 1px solid var(--vscode-inputValidation-infoBorder);
-                    padding: 10px;
-                    margin-bottom: 15px;
-                    border-radius: 5px;
-                }
-                .fixed-code {
-                    background-color: var(--vscode-editor-background);
-                    color: var(--vscode-editor-foreground);
-                    border: 1px solid var(--vscode-input-border);
-                    padding: 10px;
-                    white-space: pre;
-                    overflow-x: auto;
-                    font-family: 'Consolas', 'Courier New', monospace;
-                    margin-bottom: 20px;
-                    border-radius: 5px;
-                }
-                .button-container {
-                    display: flex;
-                    justify-content: flex-end;
-                    gap: 10px;
-                }
-                button {
-                    background-color: var(--vscode-button-background);
-                    color: var(--vscode-button-foreground);
-                    border: none;
-                    padding: 8px 12px;
-                    cursor: pointer;
-                    border-radius: 3px;
-                }
-                button:hover {
-                    background-color: var(--vscode-button-hoverBackground);
-                }
-                .title {
-                    font-size: 1.2em;
-                    font-weight: bold;
-                    margin-bottom: 5px;
-                    color: var(--vscode-editor-foreground);
-                }
-            </style>
-        </head>
-        <body>
-            <div class="title">代码问题:</div>
-            <div class="problem">${problemMessage}</div>
-            
-            <div class="title">建议修复:</div>
-            <div class="suggestion">${suggestion}</div>
-            
-            <div class="title">AI生成的修复代码:</div>
-            <pre class="fixed-code" id="fixedCode">${fixedCode}</pre>
-            
-            <div class="button-container">
-                <button id="applyButton">应用修复</button>
-            </div>
-            
-            <script>
-                const vscode = acquireVsCodeApi();
-                document.getElementById('applyButton').addEventListener('click', () => {
-                    const fixedCode = document.getElementById('fixedCode').textContent;
-                    vscode.postMessage({
-                        command: 'applyFix',
-                        fixedCode: fixedCode
-                    });
-                });
-            </script>
-        </body>
-        </html>`;
-    }
+    // This method is intentionally removed as it was a duplicate implementation
 
     /**
      * 获取AI额外帮助HTML
