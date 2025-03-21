@@ -347,11 +347,12 @@ ${code}
                     );
                 }
                 
-                // 确定诊断严重性
+                // 修改：将错误级别降低为警告级别
                 let severity: vscode.DiagnosticSeverity;
                 switch (issue.severity?.toLowerCase()) {
                     case 'error':
-                        severity = vscode.DiagnosticSeverity.Error;
+                        // 将错误改为警告级别，以不中断调试
+                        severity = vscode.DiagnosticSeverity.Warning;
                         break;
                     case 'warning':
                         severity = vscode.DiagnosticSeverity.Warning;
@@ -376,7 +377,7 @@ ${code}
                 
                 // 添加代码和源
                 diagnostic.code = issue.code || 'AI.Analysis';
-                diagnostic.source = '🤖 AI代码分析';
+                diagnostic.source = '🤖 AI代码分析 (仅警告)';
                 
                 // 添加建议作为相关信息
                 if (issue.suggestion) {
@@ -1057,8 +1058,8 @@ class AICodeActionProvider implements vscode.CodeActionProvider {
         
         // 为每个AI分析产生的诊断信息提供代码操作
         for (const diagnostic of context.diagnostics) {
-            // 检查是否是AI分析生成的诊断信息
-            if (diagnostic.source === '🤖 AI代码分析') {
+            // 检查是否是AI分析生成的诊断信息 - 更新为匹配新的诊断源标识
+            if (diagnostic.source === '🤖 AI代码分析 (仅警告)' || diagnostic.source === '🤖 AI代码分析') {
                 // 如果有相关信息包含建议，则提供快速修复
                 if (diagnostic.relatedInformation && diagnostic.relatedInformation.length > 0) {
                     const suggestion = diagnostic.relatedInformation[0].message;

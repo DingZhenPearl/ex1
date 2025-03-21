@@ -103,7 +103,11 @@ export class CppAnalyzer {
                 const syntaxDiagnostics = await this.checkSyntax(document);
                 // 为插件诊断添加明确的来源标识和更明显的视觉区分
                 syntaxDiagnostics.forEach(diagnostic => {
-                    diagnostic.source = '编程实践插件 🔍';  // 添加图标使其在UI中更明显
+                    // 修改：将所有Error级别的诊断修改为Warning级别
+                    if (diagnostic.severity === vscode.DiagnosticSeverity.Error) {
+                        diagnostic.severity = vscode.DiagnosticSeverity.Warning;
+                    }
+                    diagnostic.source = '编程实践插件 🔍 (仅警告)';  // 添加图标使其在UI中更明显
                     diagnostic.code = {
                         value: 'cpp.plugin.syntax',
                         target: vscode.Uri.parse('https://github.com/your-repo/programming-practice')
@@ -132,7 +136,12 @@ export class CppAnalyzer {
             // 添加插件图标和明确的来源标识到所有诊断信息
             diagnostics.forEach(diagnostic => {
                 if (!diagnostic.source) {
-                    diagnostic.source = '编程实践插件 🔍';
+                    diagnostic.source = '编程实践插件 🔍 (仅警告)';
+                }
+                
+                // 确保没有Error级别的诊断
+                if (diagnostic.severity === vscode.DiagnosticSeverity.Error) {
+                    diagnostic.severity = vscode.DiagnosticSeverity.Warning;
                 }
                 
                 // 添加诊断信息的相关数据，用于UI展示
@@ -140,7 +149,7 @@ export class CppAnalyzer {
                     diagnostic.relatedInformation = [
                         new vscode.DiagnosticRelatedInformation(
                             new vscode.Location(document.uri, diagnostic.range),
-                            '由编程实践插件生成的提示'
+                            '由编程实践插件生成的警告提示（不会阻碍调试）'
                         )
                     ];
                 }
@@ -205,10 +214,12 @@ export class CppAnalyzer {
                         
                         const range = new vscode.Range(lineNum, colNum, lineNum, document.lineAt(lineNum).text.length);
                         
+                        // 修改：所有编译器错误都降级为警告
                         let diagnosticSeverity: vscode.DiagnosticSeverity;
                         switch (severity) {
                             case 'error':
-                                diagnosticSeverity = vscode.DiagnosticSeverity.Error;
+                                // 将错误转为警告，不中断调试
+                                diagnosticSeverity = vscode.DiagnosticSeverity.Warning;
                                 break;
                             case 'warning':
                                 diagnosticSeverity = vscode.DiagnosticSeverity.Warning;
@@ -219,13 +230,14 @@ export class CppAnalyzer {
                         
                         const diagnostic = new vscode.Diagnostic(
                             range,
-                            message,
+                            // 如果原来是错误，在消息前添加提示
+                            severity === 'error' ? `[原错误级别] ${message}` : message,
                             diagnosticSeverity
                         );
                         
                         // 添加代码操作数据
                         diagnostic.code = 'cpp.syntax';
-                        diagnostic.source = 'C++ Analyzer';
+                        diagnostic.source = 'C++ Analyzer (仅警告)';
                         
                         diagnostics.push(diagnostic);
                     }
