@@ -406,10 +406,7 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                             this.updateCode(code);
                         }
                         break;
-                    case 'requestAiSolution':
-                        // 调用AI生成解答
-                        await this.generateAiSolution();
-                        break;
+                    // 删除requestAiSolution的case
                     // 添加渐进式学习消息处理
                     case 'requestGuidance':
                         await this.handleProgressiveGuidance(message.problemId, message.step, message.forceRefresh || false);
@@ -444,45 +441,6 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
             } catch (error) {
                 console.error('Failed to send message to webview:', error);
             }
-        }
-    }
-    
-    private async generateAiSolution() {
-        if (!this._currentProblem) {
-            await this._sendMessageToWebview({
-                command: 'validationResult',
-                success: false,
-                message: '请先选择一个问题再生成AI解答'
-            });
-            return;
-        }
-        
-        try {
-            // 使用AI代码分析器生成解答
-            const aiAnalyzer = AICodeAnalyzer.getInstance();
-            const solution = await aiAnalyzer.generateSolution(this._currentProblem.id, this._currentProblem.fullDescription);
-            
-            // 更新编辑器中的代码
-            if (solution) {
-                this.updateCode(solution);
-                await this._sendMessageToWebview({
-                    command: 'validationResult',
-                    success: true,
-                    message: 'AI已生成解答，请检查并根据需要修改。'
-                });
-            } else {
-                await this._sendMessageToWebview({
-                    command: 'validationResult',
-                    success: false,
-                    message: '无法生成AI解答。'
-                });
-            }
-        } catch (error) {
-            await this._sendMessageToWebview({
-                command: 'validationResult',
-                success: false,
-                message: `生成AI解答时出错: ${error instanceof Error ? error.message : String(error)}`
-            });
         }
     }
 
@@ -907,11 +865,7 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                 </div>
                 
                 <div class="editor-container">
-                    <div class="button-container">
-                        <button id="ai-solution-button" class="ai-button" onclick="generateAiSolution()">
-                            <span id="ai-button-text">AI生成解答</span>
-                        </button>
-                    </div>
+                    <!-- 删除AI生成解答按钮和容器 -->
                     <textarea id="code-editor" spellcheck="false" placeholder="选择题目后，代码将在这里显示..."></textarea>
                 </div>
             </div>
@@ -926,7 +880,7 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
             <script>
                 const vscode = acquireVsCodeApi();
                 let currentProblemId = '';
-                let isGeneratingCode = false;
+                // 删除isGeneratingCode变量
                 
                 // 渐进式学习状态
                 let learningSteps = {
@@ -1066,10 +1020,7 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                             resultDiv.className = 'result-container';
                             resultDiv.textContent = '';
 
-                            // 启用AI生成按钮
-                            document.getElementById('ai-solution-button').disabled = false;
-                            document.getElementById('ai-button-text').textContent = 'AI生成解答';
-                            isGeneratingCode = false;
+                            // 删除AI生成按钮状态更新相关代码
                             
                             // 重置渐进式学习状态
                             learningSteps = {
@@ -1097,12 +1048,7 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                             // Enable/disable submit button
                             document.getElementById('submit-button').disabled = false;
                             
-                            // 如果这是AI生成代码的结果，恢复按钮状态
-                            if (isGeneratingCode) {
-                                document.getElementById('ai-solution-button').disabled = false;
-                                document.getElementById('ai-button-text').textContent = 'AI生成解答';
-                                isGeneratingCode = false;
-                            }
+                            // 删除AI生成代码结果相关代码
                             break;
                             
                         // 处理渐进式学习消息
@@ -1167,26 +1113,7 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                     });
                 }
 
-                // 添加AI生成代码功能
-                function generateAiSolution() {
-                    if (!currentProblemId || isGeneratingCode) return;
-                    
-                    // 更新按钮状态
-                    const aiButton = document.getElementById('ai-solution-button');
-                    aiButton.disabled = true;
-                    document.getElementById('ai-button-text').textContent = '正在生成...';
-                    isGeneratingCode = true;
-                    
-                    // 清除之前的结果
-                    const resultDiv = document.getElementById('validation-result');
-                    resultDiv.className = 'result-container';
-                    resultDiv.textContent = '';
-                    
-                    // 发送生成解答请求
-                    vscode.postMessage({
-                        command: 'requestAiSolution'
-                    });
-                }
+                // 删除generateAiSolution函数
                 
                 // 初始渲染步骤按钮
                 renderStepButtons();
