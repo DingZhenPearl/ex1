@@ -9,6 +9,7 @@ import { CodingDataCollector } from './codingDataCollector';
 import { CppAnalyzer } from './cppAnalyzer';
 import { AICodeAnalyzer } from './aiCodeAnalyzer'; // 导入AI代码分析器
 import { AICodeCompletionProvider, AITabCompletionProvider, SmartCodeCompletionService } from './aiCodeCompletion'; // 导入AI代码补全
+import { ProgressiveLearningGuide, GuideStepType } from './progressiveLearningGuide'; // 导入渐进式学习辅导
 
 export async function activate(context: vscode.ExtensionContext) {
     // 初始化C++代码分析器
@@ -297,14 +298,20 @@ export async function activate(context: vscode.ExtensionContext) {
             }
         })
     );
+
+    // 初始化渐进式学习辅导服务
+    const progressiveLearningGuide = ProgressiveLearningGuide.getInstance();
 }
 
 class SidebarViewProvider implements vscode.WebviewViewProvider {
     private _view?: vscode.WebviewView;
     private _currentProblem?: Problem;
     private _currentCode?: string;
-
-    constructor(private readonly _extensionUri: vscode.Uri) {}
+    private _progressiveGuide?: ProgressiveLearningGuide;
+    
+    constructor(private readonly _extensionUri: vscode.Uri) {
+        this._progressiveGuide = ProgressiveLearningGuide.getInstance();
+    }
 
     public resolveWebviewView(
         webviewView: vscode.WebviewView,
@@ -402,6 +409,13 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                     case 'requestAiSolution':
                         // 调用AI生成解答
                         await this.generateAiSolution();
+                        break;
+                    // 添加渐进式学习消息处理
+                    case 'requestGuidance':
+                        await this.handleProgressiveGuidance(message.problemId, message.step, message.forceRefresh || false);
+                        break;
+                    case 'unlockNextStep':
+                        await this.unlockNextLearningStep(message.problemId);
                         break;
                 }
             } catch (error) {
@@ -730,6 +744,126 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                     opacity: 0.5;
                     cursor: not-allowed;
                 }
+                /* 渐进式学习指导相关样式 */
+                .learning-guide-container {
+                    border-top: 1px solid var(--vscode-panel-border);
+                    margin-top: 12px;
+                    padding-top: 12px;
+                }
+                .guide-header {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: 10px;
+                }
+                .guide-title {
+                    font-weight: bold;
+                    font-size: 1.1em;
+                }
+                .guide-steps {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 8px;
+                    margin-bottom: 12px;
+                }
+                .guide-step {
+                    padding: 5px 10px;
+                    padding-right: 30px; /* 为刷新按钮留出空间 */
+                    background-color: var(--vscode-button-secondaryBackground);
+                    color: var(--vscode-button-secondaryForeground);
+                    border-radius: 3px;
+                    cursor: pointer;
+                    font-size: 0.9em;
+                    opacity: 0.5;
+                    position: relative;
+                }
+                .guide-step.unlocked {
+                    opacity: 1;
+                }
+                .guide-step.active {
+                    background-color: var(--vscode-button-background);
+                    color: var(--vscode-button-foreground);
+                }
+                .guide-step.loading::after {
+                    content: '';
+                    position: absolute;
+                    right: 5px;
+                    top: 5px;
+                    width: 10px;
+                    height: 10px;
+                    border-radius: 50%;
+                    border: 2px solid var(--vscode-button-foreground);
+                    border-top-color: transparent;
+                    animation: spin 1s linear infinite;
+                }
+                .guide-content {
+                    margin-top: 10px;
+                    padding: 10px;
+                    background-color: var(--vscode-editorWidget-background);
+                    border: 1px solid var(--vscode-widget-border);
+                    border-radius: 5px;
+                    max-height: 300px;
+                    overflow-y: auto;
+                    font-size: 0.9em;
+                    line-height: 1.5;
+                    white-space: pre-wrap;
+                }
+                .guide-content.hidden {
+                    display: none;
+                }
+                .unlock-button {
+                    background-color: var(--vscode-button-background);
+                    color: var(--vscode-button-foreground);
+                    border: none;
+                    padding: 6px 12px;
+                    font-size: 0.9em;
+                    border-radius: 3px;
+                    cursor: pointer;
+                }
+                .unlock-button:hover {
+                    background-color: var(--vscode-button-hoverBackground);
+                }
+                .unlock-button:disabled {
+                    opacity: 0.5;
+                    cursor: not-allowed;
+                }
+                @keyframes spin {
+                    to {
+                        transform: rotate(360deg);
+                    }
+                }
+                /* 两列布局样式 */
+                .two-column-container {
+                    display: flex;
+                    gap: 10px;
+                    margin-bottom: 10px;
+                }
+                .column {
+                    flex: 1;
+                    min-width: 0;
+                }
+                .refresh-btn {
+                    position: absolute;
+                    right: 5px;
+                    top: 5px;
+                    background: transparent;
+                    border: none;
+                    color: var(--vscode-button-foreground);
+                    cursor: pointer;
+                    width: 20px;
+                    height: 20px;
+                    font-size: 12px;
+                    border-radius: 3px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    opacity: 0.6;
+                    transition: opacity 0.2s;
+                }
+                .refresh-btn:hover {
+                    opacity: 1;
+                    background-color: rgba(128, 128, 128, 0.2);
+                }
             </style>
         </head>
         <body>
@@ -747,17 +881,32 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                         <div class="section-title">题目详情：</div>
                         <div id="problem-description"></div>
                         
-                        <!-- 添加输入样例和输出样例部分 -->
-                        <div class="section-title">输入样例：</div>
-                        <div id="input-example" class="example-block"></div>
+                        <div class="two-column-container">
+                            <div class="column">
+                                <div class="section-title">输入样例：</div>
+                                <div id="input-example" class="example-block"></div>
+                            </div>
+                            <div class="column">
+                                <div class="section-title">输出样例：</div>
+                                <div id="output-example" class="example-block"></div>
+                            </div>
+                        </div>
                         
-                        <div class="section-title">输出样例：</div>
-                        <div id="output-example" class="example-block"></div>
+                        <!-- 渐进式学习指导容器 -->
+                        <div class="learning-guide-container">
+                            <div class="guide-header">
+                                <div class="guide-title">渐进式编程辅导</div>
+                                <button id="unlock-next-step" class="unlock-button" onclick="unlockNextStep()">解锁下一步</button>
+                            </div>
+                            <div class="guide-steps" id="guide-steps">
+                                <!-- 步骤按钮将动态插入 -->
+                            </div>
+                            <div id="guide-content" class="guide-content hidden"></div>
+                        </div>
                     </div>
                 </div>
                 
                 <div class="editor-container">
-                    <!-- 添加AI生成代码按钮 -->
                     <div class="button-container">
                         <button id="ai-solution-button" class="ai-button" onclick="generateAiSolution()">
                             <span id="ai-button-text">AI生成解答</span>
@@ -779,12 +928,113 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                 let currentProblemId = '';
                 let isGeneratingCode = false;
                 
+                // 渐进式学习状态
+                let learningSteps = {
+                    unlockedSteps: ['problem-analysis'], 
+                    currentStep: null
+                };
+                
+                // 定义步骤类型和描述
+                const stepTypes = {
+                    'problem-analysis': '智能审题',
+                    'code-structure': '代码分析',
+                    'key-hints': '关键点拨',
+                    'detailed-guidance': '详细指导',
+                    'guided-code': '指导代码'
+                };
+                
+                // 所有步骤的顺序
+                const stepOrder = [
+                    'problem-analysis',
+                    'code-structure',
+                    'key-hints',
+                    'detailed-guidance',
+                    'guided-code'
+                ];
+                
                 // Initialize state
                 const state = vscode.getState() || { code: '' };
                 document.getElementById('code-editor').value = state.code;
 
                 // Notify webview is ready
                 vscode.postMessage({ command: 'ready' });
+                
+                // 渲染步骤按钮
+                function renderStepButtons() {
+                    const stepsContainer = document.getElementById('guide-steps');
+                    stepsContainer.innerHTML = '';
+                    
+                    stepOrder.forEach(step => {
+                        const isUnlocked = learningSteps.unlockedSteps.includes(step);
+                        const isActive = learningSteps.currentStep === step;
+                        
+                        const stepButton = document.createElement('div');
+                        stepButton.className = \`guide-step \${isUnlocked ? 'unlocked' : ''} \${isActive ? 'active' : ''}\`;
+                        stepButton.textContent = stepTypes[step];
+                        stepButton.dataset.step = step;
+                        
+                        if (isUnlocked) {
+                            // 添加刷新按钮
+                            const refreshBtn = document.createElement('button');
+                            refreshBtn.className = 'refresh-btn';
+                            refreshBtn.title = '重新生成';
+                            refreshBtn.innerHTML = '↻';
+                            refreshBtn.onclick = function(e) {
+                                e.stopPropagation(); // 阻止事件冒泡
+                                requestGuidance(step, true);
+                            };
+                            stepButton.appendChild(refreshBtn);
+                            
+                            stepButton.addEventListener('click', () => requestGuidance(step));
+                        }
+                        
+                        stepsContainer.appendChild(stepButton);
+                    });
+                    
+                    // 调整解锁按钮状态
+                    document.getElementById('unlock-next-step').disabled = learningSteps.unlockedSteps.length >= stepOrder.length;
+                }
+                
+                // 请求学习指导
+                function requestGuidance(step, forceRefresh = false) {
+                    // 如果未选择问题，则不操作
+                    if (!currentProblemId) return;
+                    
+                    // 设置当前步骤
+                    learningSteps.currentStep = step;
+                    
+                    // 更新步骤按钮状态
+                    renderStepButtons();
+                    
+                    // 设置步骤按钮为加载状态
+                    const stepButton = document.querySelector(\`.guide-step[data-step="\${step}"]\`);
+                    if (stepButton) {
+                        stepButton.classList.add('loading');
+                    }
+                    
+                    // 显示内容区域
+                    const contentArea = document.getElementById('guide-content');
+                    contentArea.textContent = '加载中...';
+                    contentArea.classList.remove('hidden');
+                    
+                    // 发送请求，添加forceRefresh参数
+                    vscode.postMessage({
+                        command: 'requestGuidance',
+                        problemId: currentProblemId,
+                        step: step,
+                        forceRefresh: forceRefresh
+                    });
+                }
+                
+                // 解锁下一个学习步骤
+                function unlockNextStep() {
+                    if (!currentProblemId) return;
+                    
+                    vscode.postMessage({
+                        command: 'unlockNextStep',
+                        problemId: currentProblemId
+                    });
+                }
                 
                 window.addEventListener('message', event => {
                     const message = event.data;
@@ -820,6 +1070,16 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                             document.getElementById('ai-solution-button').disabled = false;
                             document.getElementById('ai-button-text').textContent = 'AI生成解答';
                             isGeneratingCode = false;
+                            
+                            // 重置渐进式学习状态
+                            learningSteps = {
+                                unlockedSteps: ['problem-analysis'],
+                                currentStep: null
+                            };
+                            renderStepButtons();
+                            
+                            // 隐藏指导内容
+                            document.getElementById('guide-content').classList.add('hidden');
                             break;
                             
                         case 'updateCode':
@@ -842,6 +1102,48 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                                 document.getElementById('ai-solution-button').disabled = false;
                                 document.getElementById('ai-button-text').textContent = 'AI生成解答';
                                 isGeneratingCode = false;
+                            }
+                            break;
+                            
+                        // 处理渐进式学习消息
+                        case 'guidanceContent':
+                            // 移除加载状态
+                            const stepBtn = document.querySelector(\`.guide-step[data-step="\${message.step}"]\`);
+                            if (stepBtn) {
+                                stepBtn.classList.remove('loading');
+                            }
+                            
+                            // 显示内容
+                            const guideContent = document.getElementById('guide-content');
+                            guideContent.textContent = message.content;
+                            guideContent.classList.remove('hidden');
+                            break;
+                            
+                        case 'stepUnlocked':
+                            // 添加新解锁的步骤
+                            if (!learningSteps.unlockedSteps.includes(message.step)) {
+                                learningSteps.unlockedSteps.push(message.step);
+                            }
+                            
+                            // 设置当前步骤
+                            learningSteps.currentStep = message.step;
+                            
+                            // 更新步骤按钮
+                            renderStepButtons();
+                            
+                            // 自动请求新解锁步骤的指导
+                            requestGuidance(message.step);
+                            break;
+                            
+                        case 'guidanceLoading':
+                            // 处理加载状态
+                            const loadingStepBtn = document.querySelector(\`.guide-step[data-step="\${message.step}"]\`);
+                            if (loadingStepBtn) {
+                                if (message.loading) {
+                                    loadingStepBtn.classList.add('loading');
+                                } else {
+                                    loadingStepBtn.classList.remove('loading');
+                                }
                             }
                             break;
                     }
@@ -885,11 +1187,81 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                         command: 'requestAiSolution'
                     });
                 }
+                
+                // 初始渲染步骤按钮
+                renderStepButtons();
             </script>
         </body>
         </html>`;
     }
 
+    /**
+     * 处理渐进式学习指导请求
+     */
+    private async handleProgressiveGuidance(problemId: string, stepType: GuideStepType, forceRefresh: boolean = false) {
+        if (!this._currentProblem || !this._progressiveGuide) {
+            return;
+        }
+        
+        try {
+            // 设置当前学习步骤
+            this._progressiveGuide.setCurrentStep(problemId, stepType);
+            
+            // 显示加载状态
+            await this._sendMessageToWebview({
+                command: 'guidanceLoading',
+                step: stepType,
+                loading: true
+            });
+            
+            // 获取指导内容，传入forceRefresh参数决定是否强制刷新
+            const guidanceContent = await this._progressiveGuide.getGuidanceContent(
+                problemId,
+                this._currentProblem.fullDescription,
+                stepType,
+                forceRefresh
+            );
+            
+            // 发送指导内容到Webview
+            await this._sendMessageToWebview({
+                command: 'guidanceContent',
+                step: stepType,
+                content: guidanceContent,
+                problemId: problemId
+            });
+        } catch (error) {
+            console.error('获取学习指导内容失败:', error);
+            await this._sendMessageToWebview({
+                command: 'guidanceContent',
+                step: stepType,
+                content: `获取学习指导失败: ${error instanceof Error ? error.message : String(error)}`,
+                error: true
+            });
+        } finally {
+            // 关闭加载状态
+            await this._sendMessageToWebview({
+                command: 'guidanceLoading',
+                step: stepType,
+                loading: false
+            });
+        }
+    }
+    
+    /**
+     * 解锁下一个学习步骤
+     */
+    private async unlockNextLearningStep(problemId: string) {
+        if (!this._progressiveGuide) return;
+        
+        const nextStep = this._progressiveGuide.unlockNextStep(problemId);
+        if (nextStep) {
+            await this._sendMessageToWebview({
+                command: 'stepUnlocked',
+                step: nextStep,
+                problemId: problemId
+            });
+        }
+    }
 }
 
 export function deactivate() {}

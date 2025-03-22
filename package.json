@@ -223,6 +223,16 @@
           "type": "number",
           "default": 3,
           "description": "触发AI代码补全的最小字符数"
+        },
+        "programmingPractice.enableProgressiveLearning": {
+          "type": "boolean",
+          "default": true,
+          "description": "启用渐进式编程辅导功能"
+        },
+        "programmingPractice.progressiveLearningMaxTokens": {
+          "type": "number",
+          "default": 3000,
+          "description": "渐进式学习指导生成的最大Token数量"
         }
       }
     }
