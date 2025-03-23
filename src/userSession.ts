@@ -72,7 +72,7 @@ export class UserSession {
     static async fetchUserProfile(email: string): Promise<void> {
         try {
             console.log('正在获取用户个人信息...');
-            const serverUrl = vscode.workspace.getConfiguration('programmingPractice').get('serverUrl') || 'http://localhost:3000';
+            const serverUrl = vscode.workspace.getConfiguration('programmingPractice').get('serverUrl') || 'http://182.92.85.220:3000';
             const response = await fetch(`${serverUrl}/api/profile/${email}`);
             
             if (!response.ok) {

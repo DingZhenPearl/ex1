@@ -160,7 +160,7 @@
         },
         "programmingPractice.serverUrl": {
           "type": "string",
-          "default": "http://localhost:3000",
+          "default": "http://182.92.85.220:3000",
           "description": "服务器地址，用于获取题目"
         },
         "programmingPractice.enableAIAnalysis": {

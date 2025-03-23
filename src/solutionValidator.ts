@@ -41,7 +41,7 @@ export class SolutionValidator {
     async validate(problemId: string, code: string): Promise<ValidationResult> {
         try {
             // 获取服务器URL
-            const serverUrl = vscode.workspace.getConfiguration('programmingPractice').get('serverUrl') || 'http://localhost:3000';
+            const serverUrl = vscode.workspace.getConfiguration('programmingPractice').get('serverUrl') || 'http://182.92.85.220:3000/';
             
             console.log(`验证题目 ${problemId} 的解决方案...`);
             console.log(`使用服务器 ${serverUrl}/api/problems/validate-cpp`);

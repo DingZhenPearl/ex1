@@ -63,7 +63,7 @@ export class LoginView {
     private static async handleLogin(userType: string, email: string, password: string) {
         try {
             console.log('正在登录...');
-            const response = await fetch('http://localhost:3000/api/auth/login', {
+            const response = await fetch('http://182.92.85.220:3000/api/auth/login', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -94,7 +94,7 @@ export class LoginView {
     private static async handleRegister(userType: string, email: string, password: string) {
         try {
             console.log('正在注册...');
-            const response = await fetch('http://localhost:3000/api/auth/register', {
+            const response = await fetch('http://182.92.85.220:3000/api/auth/register', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'

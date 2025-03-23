@@ -51,7 +51,7 @@ export class ProblemProvider implements vscode.TreeDataProvider<Problem> {
             
             this.isLoading = true;
             // 在refreshProblems方法中替换serverUrl的获取方式
-            const serverUrl = vscode.workspace.getConfiguration('programmingPractice').get('serverUrl') || 'http://localhost:3000';
+            const serverUrl = vscode.workspace.getConfiguration('programmingPractice').get('serverUrl') || 'http://182.92.85.220:3000';
             const response = await fetch(`${serverUrl}/api/problems/all`);
             
             if (!response.ok) {

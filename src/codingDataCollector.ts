@@ -163,8 +163,7 @@ export class CodingDataCollector {
             const studentId = userProfile.student_id || UserSession.getUserEmail() || '';
             const studentClass = userProfile.class_name || '';
             
-            // 获取服务器URL
-            const serverUrl = vscode.workspace.getConfiguration('programmingPractice').get('serverUrl') || 'http://localhost:3000';
+            const serverUrl = vscode.workspace.getConfiguration('programmingPractice').get('serverUrl') || 'http://182.92.85.220:3000';
             
             // 获取首次查看时间
             const firstViewTime = this.getProblemFirstViewTime(problemId);

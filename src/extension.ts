@@ -338,7 +338,7 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                             console.log(`正在验证问题 ${this._currentProblem.id} 的解决方案...`);
                             const validator = new SolutionValidator(this._extensionUri.fsPath);
                             
-                            const serverUrl = vscode.workspace.getConfiguration('programmingPractice').get('serverUrl') || 'http://localhost:3000';
+                            const serverUrl = vscode.workspace.getConfiguration('programmingPractice').get('serverUrl') || 'http://182.92.85.220:3000';
                             console.log(`使用服务器 ${serverUrl} 进行代码验证`);
                             
                             try {
