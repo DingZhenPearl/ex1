@@ -1,71 +1,41 @@
-# ex1 README
+# ex1 - 您的插件名称
 
-This is the README for your extension "ex1". After writing up a brief description, we recommend including the following sections.
+简要描述您的插件功能和目的。例如：这个插件提供了代码高亮和自动完成功能，支持XYZ语言。
 
-## Features
+## 功能特性
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
+- 功能1：提供XYZ语言的语法高亮
+- 功能2：自动完成和代码片段
+- 功能3：代码格式化支持
 
-For example if there is an image subfolder under your extension project workspace:
 
-\!\[feature X\]\(images/feature-x.png\)
+## 系统要求
 
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+- VS Code 1.60.0 或更高版本
+- Node.js 14.0 或更高版本
 
-## Requirements
+## 扩展设置
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
+此扩展提供以下设置：
 
-## Extension Settings
+* `ex1.enable`: 启用/禁用此扩展
+* `ex1.formatOnSave`: 设置为 `true` 以在保存时格式化代码
 
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
+## 已知问题
 
-For example:
+- 在某些大型文件中可能会有性能问题
+- 暂不支持X功能
 
-This extension contributes the following settings:
+## 发布说明
 
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
+### 0.0.1 - 2025-03-23
 
-## Known Issues
+- 初始版本发布
+- 支持基本语法高亮
+- 添加代码片段支持
 
-Calling out known issues can help limit users opening duplicate issues against your extension.
 
-## Release Notes
-
-Users appreciate release notes as you update your extension.
-
-### 1.0.0
-
-Initial release of ...
-
-### 1.0.1
-
-Fixed issue #.
-
-### 1.1.0
-
-Added features X, Y, and Z.
 
 ---
 
-## Following extension guidelines
-
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
-
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
-
-## Working with Markdown
-
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
-
-## For more information
-
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
-
-**Enjoy!**
+**享受编码吧!**
