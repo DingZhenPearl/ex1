@@ -10,6 +10,7 @@ import { CppAnalyzer } from './cppAnalyzer';
 import { AICodeAnalyzer } from './aiCodeAnalyzer'; // 导入AI代码分析器
 import { AICodeCompletionProvider, AITabCompletionProvider, SmartCodeCompletionService } from './aiCodeCompletion'; // 导入AI代码补全
 import { ProgressiveLearningGuide, GuideStepType } from './progressiveLearningGuide'; // 导入渐进式学习辅导
+import { ApiConfigView } from './apiConfigView'; // 导入API配置页面
 
 export async function activate(context: vscode.ExtensionContext) {
     // 初始化C++代码分析器
@@ -245,6 +246,8 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(viewCodingStatsCommand);
 
     // 注册AI代码分析相关命令
+    const apiConfigView = new ApiConfigView(context);
+    
     context.subscriptions.push(
         vscode.commands.registerCommand('programmingPractice.requestAIFix', async (document: vscode.TextDocument, diagnostic: vscode.Diagnostic, suggestion: string) => {
             await aiCodeAnalyzer.applyAISuggestion(document, diagnostic, suggestion);
@@ -270,6 +273,12 @@ export async function activate(context: vscode.ExtensionContext) {
             const currentSetting = vscode.workspace.getConfiguration('programmingPractice').get('enableTabCompletion');
             vscode.workspace.getConfiguration('programmingPractice').update('enableTabCompletion', !currentSetting, vscode.ConfigurationTarget.Global);
             vscode.window.showInformationMessage(`Tab智能补全已${!currentSetting ? '启用' : '禁用'}`);
+        }),
+        
+        // 添加配置AI API设置的命令 - 修改为使用配置页面
+        vscode.commands.registerCommand('programmingPractice.configureApiSettings', async () => {
+            // 打开API配置页面而不是设置
+            apiConfigView.show();
         })
     );
 
@@ -524,7 +533,7 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
     }
     
     private _getWebviewContent() {
-        return `<!DOCTYPE html>
+        return `<!DOCTYPE html>.
         <html lang="en">
         <head>
             <meta charset="UTF-8">

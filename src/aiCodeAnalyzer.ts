@@ -948,6 +948,7 @@ ${markedFileContent}
         }
 
         const apiEndpoint = vscode.workspace.getConfiguration('programmingPractice').get('aiApiEndpoint', '');
+        const modelName = this.getModelNameFromConfig();
         
         // 检查API调用频率限制
         const now = Date.now();
@@ -975,7 +976,7 @@ ${markedFileContent}
                         'Authorization': `Bearer ${apiKey}`
                     },
                     body: JSON.stringify({
-                        model: vscode.workspace.getConfiguration('programmingPractice').get('aiModelName', 'lite'),
+                        model: modelName,
                         messages: [
                             { "role": "system", "content": systemRole },
                             { "role": "user", "content": prompt }
@@ -1006,6 +1007,14 @@ ${markedFileContent}
         
         // 如果所有重试都失败
         throw new Error('API调用失败，已达到最大重试次数');
+    }
+
+    /**
+     * 从配置中获取模型名称
+     */
+    private getModelNameFromConfig(): string {
+        const modelName = vscode.workspace.getConfiguration('programmingPractice').get('aiModelName');
+        return modelName as string || 'Qwen/Qwen2.5-Coder-7B-Instruct'; // 如果为空，则返回默认模型
     }
 
     /**

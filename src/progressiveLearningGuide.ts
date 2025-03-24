@@ -125,7 +125,7 @@ export class ProgressiveLearningGuide {
                 prompt,
                 systemRole,
                 0.3,
-                3000
+                vscode.workspace.getConfiguration('programmingPractice').get('progressiveLearningMaxTokens', 3000)
             );
             
             // 缓存获取的内容

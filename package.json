@@ -93,6 +93,11 @@
       {
         "command": "programmingPractice.triggerTabCompletion",
         "title": "触发智能Tab补全"
+      },
+      {
+        "command": "programmingPractice.configureApiSettings",
+        "title": "配置AI API设置",
+        "icon": "$(settings-gear)"
       }
     ],
     "menus": {
@@ -100,6 +105,11 @@
         {
           "command": "programming-practice.refreshProblems",
           "when": "view == problemList",
+          "group": "navigation"
+        },
+        {
+          "command": "programmingPractice.configureApiSettings",
+          "when": "view == programmingPracticeView",
           "group": "navigation"
         }
       ],
@@ -176,18 +186,22 @@
         "programmingPractice.aiApiKey": {
           "type": "string",
           "default": "sk-jcvoeonbuuovidkgtlsesuzvivuqztinzmhrpvtahxqwyfhm",
-          "description": "AI大模型API密钥"
+          "description": "AI大模型API密钥（默认为免费模型密钥，可替换为自己的密钥）"
         },
         "programmingPractice.aiApiEndpoint": {
           "type": "string",
           "default": "https://api.siliconflow.cn/v1/chat/completions",
-          "description": "AI大模型API终端点"
+          "description": "AI大模型API终端点（基座地址）"
         },
         "programmingPractice.aiModelName": {
           "type": "string",
           "default": "Qwen/Qwen2.5-Coder-7B-Instruct",
-          "enum": ["Qwen/Qwen2.5-Coder-7B-Instruct"],
           "description": "使用的AI模型名称"
+        },
+        "programmingPractice.customModelName": {
+          "type": "string",
+          "default": "",
+          "description": "当模型选择为\"custom\"时，使用此自定义模型名称"
         },
         "programmingPractice.aiMaxFileSizeKB": {
           "type": "number",
