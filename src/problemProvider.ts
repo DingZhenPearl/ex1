@@ -28,6 +28,9 @@ export class ProblemProvider implements vscode.TreeDataProvider<Problem> {
     private _onDidChangeTreeData: vscode.EventEmitter<Problem | undefined | null | void> = new vscode.EventEmitter<Problem | undefined | null | void>();
     readonly onDidChangeTreeData: vscode.Event<Problem | undefined | null | void> = this._onDidChangeTreeData.event;
 
+    private _onDidChangeProblem: vscode.EventEmitter<string> = new vscode.EventEmitter<string>();
+    readonly onDidChangeProblem: vscode.Event<string> = this._onDidChangeProblem.event;
+
     private _currentProblemId: string = '1'; // 默认题目ID
     private problems: Problem[] = [];
     private isLoading: boolean = false;
@@ -149,7 +152,15 @@ export class ProblemProvider implements vscode.TreeDataProvider<Problem> {
     }
 
     setCurrentProblemId(id: string): void {
+        // 如果切换到新题目，暂停当前题目的计时
+        if (this._currentProblemId && this._currentProblemId !== id) {
+            CodingDataCollector.getInstance().pauseCodingTimer(this._currentProblemId);
+        }
+        
         this._currentProblemId = id;
+        // 开始新题目的计时
+        CodingDataCollector.getInstance().startCodingTimer(id);
+        this._onDidChangeProblem.fire(id);
     }
 
     // 获取指定ID的题目

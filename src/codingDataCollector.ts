@@ -11,6 +11,8 @@ export class CodingDataCollector {
     
     // 记录题目首次查看时间
     private problemViewTimes: Map<string, string> = new Map();
+    private codingStartTimes: Map<string, string> = new Map(); // 新增：记录编程开始时间
+    private problemActiveStatus: Map<string, boolean> = new Map(); // 新增：记录题目活动状态
     private globalState?: vscode.Memento;
     
     private constructor() {
@@ -85,6 +87,41 @@ export class CodingDataCollector {
     }
     
     /**
+     * 记录用户开始编程的时间
+     * @param problemId 题目ID
+     */
+    public startCodingTimer(problemId: string): void {
+        if (!this.codingStartTimes.has(problemId)) {
+            const timeString = this.formatDateToChineseTime();
+            this.codingStartTimes.set(problemId, timeString);
+            this.problemActiveStatus.set(problemId, true);
+            console.log(`开始记录题目 ${problemId} 的编程时间: ${timeString}`);
+        }
+    }
+
+    /**
+     * 暂停编程计时器
+     * @param problemId 题目ID
+     */
+    public pauseCodingTimer(problemId: string): void {
+        this.problemActiveStatus.set(problemId, false);
+        console.log(`暂停题目 ${problemId} 的编程时间记录`);
+    }
+
+    /**
+     * 计算编程时间（秒）
+     * @param problemId 题目ID
+     */
+    public calculateCodingTime(problemId: string): number {
+        const startTime = this.codingStartTimes.get(problemId);
+        if (!startTime) return 0;
+
+        const start = new Date(startTime);
+        const end = new Date();
+        return Math.floor((end.getTime() - start.getTime()) / 1000);
+    }
+    
+    /**
      * 调试方法：列出所有记录的查看时间
      */
     public listAllViewTimes(): void {
@@ -152,47 +189,31 @@ export class CodingDataCollector {
                 return false;
             }
             
-            // 从用户会话获取学生信息
             const userProfile = UserSession.getUserProfile();
-            
             if (!userProfile) {
                 vscode.window.showWarningMessage('无法获取用户档案');
                 return false;
             }
             
-            const studentId = userProfile.student_id || UserSession.getUserEmail() || '';
-            const studentClass = userProfile.class_name || '';
+            // 修改字段名以匹配后端期望的格式
+            const submissionData = {
+                student_class: userProfile.class_name || '',
+                student_id: userProfile.student_id || UserSession.getUserEmail() || '',
+                problem_id: problemId,
+                problem_title: problemTitle,
+                code_content: code,
+                submit_result: submitResult ? 'success' : 'failed',
+                execution_errors: executionInfo?.message || null,
+                first_view_time: this.getProblemFirstViewTime(problemId),
+                submission_time: this.formatDateToChineseTime(),
+                coding_time: this.calculateCodingTime(problemId)
+            };
             
             // 获取服务器URL
             const serverUrl = vscode.workspace.getConfiguration('programmingPractice').get('serverUrl') || 'http://localhost:3000';
             
-            // 获取首次查看时间
-            const firstViewTime = this.getProblemFirstViewTime(problemId);
+            console.log('准备提交的编程数据:', JSON.stringify(submissionData, null, 2));
             
-            // 解析执行信息
-            const errorType = executionInfo?.errorType || "unknown";
-            const executionMessage = executionInfo?.message || null;
-            const executionDetails = executionInfo?.details ? JSON.stringify(executionInfo.details) : null;
-            
-            // 准备提交数据 - 确保字段名与后端期望的一致
-            const submissionData = {
-                studentId: studentId,           // 后端期望 studentId
-                studentClass: studentClass,     // 后端期望 studentClass 
-                problemId: problemId,           // 后端期望 problemId
-                problemTitle: problemTitle,     // 后端期望 problemTitle
-                codeContent: code,              // 后端期望 codeContent
-                submitResult: submitResult ? 'success' : 'failed',
-                errorType: errorType,
-                executionErrors: executionMessage,
-                executionDetails: executionDetails,
-                // 确保时间格式正确且后端能识别
-                firstViewTime: firstViewTime,
-                submissionTime: this.formatDateToChineseTime()
-            };
-            
-            console.log(`准备提交数据到 ${serverUrl}/api/coding/submit`, JSON.stringify(submissionData, null, 2));
-            
-            // 提交数据到服务器
             const response = await fetch(`${serverUrl}/api/coding/submit`, {
                 method: 'POST',
                 headers: {
@@ -201,74 +222,22 @@ export class CodingDataCollector {
                 },
                 body: JSON.stringify(submissionData)
             });
-            
-            // 保存原始响应文本，便于调试
-            const responseText = await response.text();
-            console.log('原始响应:', responseText);
-            
-            // 检查响应状态
-            if (!response.ok) {
-                console.error(`HTTP请求失败: ${response.status} ${response.statusText}`);
-                return false;
-            }
 
-            // 针对多行JSON处理进行修复
-            // 服务器返回多个JSON对象，每行一个
-            const jsonLines = responseText.trim().split(/\r?\n/);
-            
-            // 打印原始响应行，便于调试
-            console.log('响应行数:', jsonLines.length);
-            jsonLines.forEach((line, index) => {
-                console.log(`响应行 ${index + 1}:`, line);
-            });
-            
-            // 检查是否所有JSON行都表示成功
-            let allLinesSuccess = true;
-            let anyValidJson = false;
-            
-            for (const line of jsonLines) {
-                if (!line.trim()) continue;
-                
-                try {
-                    const parsedJson = JSON.parse(line.trim());
-                    console.log('已成功解析JSON行:', JSON.stringify(parsedJson));
-                    
-                    anyValidJson = true;
-                    
-                    // 只有当JSON明确包含success:false时才标记失败
-                    if (parsedJson && parsedJson.success === false) {
-                        allLinesSuccess = false;
-                        console.error('发现失败响应:', parsedJson.message || '未知错误');
-                    }
-                } catch (e) {
-                    console.error(`JSON解析失败:`, e);
-                    console.error(`问题行: "${line}"`);
-                }
-            }
-            
-            // 如果没有任何有效JSON，尝试解析整个响应
-            if (!anyValidJson) {
-                try {
-                    const wholeJson = JSON.parse(responseText);
-                    console.log('整体解析JSON结果:', JSON.stringify(wholeJson));
-                    return wholeJson.success === true;
-                } catch (e) {
-                    console.error('整体响应解析失败:', e);
-                    return false;
-                }
-            }
-            
-            // 只要有任何有效JSON且全部成功，则整体成功
-            if (allLinesSuccess && anyValidJson) {
-                console.log('数据提交成功!');
-                return true;
-            } else {
-                console.error('数据提交失败: 响应中包含错误信息或无有效JSON');
+            console.log('服务器响应状态:', response.status);
+            const responseText = await response.text();
+            console.log('服务器原始响应:', responseText);
+
+            try {
+                const result = JSON.parse(responseText);
+                console.log('解析后的响应:', result);
+                return result.success === true;
+            } catch (e) {
+                console.error('解析响应JSON失败:', e);
                 return false;
             }
         } catch (error) {
             console.error('提交编程数据时出错:', error);
-            vscode.window.showErrorMessage(`提交编程数据时出错: ${error instanceof Error ? error.message : String(error)}`);
+            vscode.window.showErrorMessage(`提交编程数据失败: ${error instanceof Error ? error.message : String(error)}`);
             return false;
         }
     }
