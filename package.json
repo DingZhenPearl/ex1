@@ -185,7 +185,7 @@
         },
         "programmingPractice.aiApiKey": {
           "type": "string",
-          "default": "sk-jcvoeonbuuovidkgtlsesuzvivuqztinzmhrpvtahxqwyfhm",
+          "default": "sk-jvemhtlzzpiaawbmveoqgzohziojbngggfrtvhtxxszyxzzy",
           "description": "AI大模型API密钥（默认为免费模型密钥，可替换为自己的密钥）"
         },
         "programmingPractice.aiApiEndpoint": {

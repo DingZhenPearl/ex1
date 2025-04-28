@@ -400,7 +400,7 @@ export class ApiConfigView {
             const config = vscode.workspace.getConfiguration('programmingPractice');
             
             // 默认值
-            const defaultApiKey = 'sk-jcvoeonbuuovidkgtlsesuzvivuqztinzmhrpvtahxqwyfhm';
+            const defaultApiKey = 'sk-jvemhtlzzpiaawbmveoqgzohziojbngggfrtvhtxxszyxzzy';
             const defaultEndpoint = 'https://api.siliconflow.cn/v1/chat/completions';
             const defaultModel = 'Qwen/Qwen2.5-Coder-7B-Instruct';
             
