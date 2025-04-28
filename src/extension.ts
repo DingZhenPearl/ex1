@@ -16,33 +16,33 @@ export async function activate(context: vscode.ExtensionContext) {
     // 初始化C++代码分析器
     const cppAnalyzer = CppAnalyzer.getInstance();
     cppAnalyzer.initialize(context);
-    
+
     // 初始化AI代码分析器
     const aiCodeAnalyzer = AICodeAnalyzer.getInstance();
     aiCodeAnalyzer.initialize(context);
-    
+
     // 检查设置，只有在明确启用时才初始化智能代码补全
     const enableAICompletion = vscode.workspace.getConfiguration('programmingPractice').get('enableAICodeCompletion', false);
     const enableTabCompletion = vscode.workspace.getConfiguration('programmingPractice').get('enableTabCompletion', false);
-    
+
     if (enableAICompletion || enableTabCompletion) {
         // 使用智能代码补全服务代替单独的Tab补全和代码补全
         const smartCompletionService = SmartCodeCompletionService.getInstance();
         smartCompletionService.initialize(context);
-        
+
         // 只在明确启用时注册AI代码补全提供程序
         if (enableAICompletion) {
             const completionProvider = new AICodeCompletionProvider();
             context.subscriptions.push(
                 vscode.languages.registerCompletionItemProvider(
-                    ['cpp', 'c'], 
+                    ['cpp', 'c'],
                     completionProvider,
                     '.', ':', '>', '(', '[' // 触发字符
                 )
             );
         }
     }
-    
+
     // 注册修改后的Tab补全键绑定，使用Alt+Tab而不是Tab
     context.subscriptions.push(
         vscode.commands.registerCommand('programmingPractice.triggerTabCompletion', async () => {
@@ -65,31 +65,31 @@ export async function activate(context: vscode.ExtensionContext) {
     // 初始化编程数据收集器并传入上下文
     const codingDataCollector = CodingDataCollector.getInstance();
     codingDataCollector.initializeGlobalState(context);
-    
+
     // 列出当前已记录的所有查看时间（调试用）
     codingDataCollector.listAllViewTimes();
 
     // 检查用户是否已登录
     const isLoggedIn = UserSession.isLoggedIn();
-    
+
     // 根据实际登录状态设置上下文变量
     await vscode.commands.executeCommand('setContext', 'programming-practice.isLoggedIn', isLoggedIn);
 
     // 注册登录命令
     const loginCommand = vscode.commands.registerCommand('programming-practice.login', async () => {
         LoginView.show();
-        
+
         // 登录成功逻辑在loginView.ts中处理
     });
-    
+
     // 注册注销命令
     const logoutCommand = vscode.commands.registerCommand('programming-practice.logout', async () => {
         UserSession.logout();
         vscode.window.showInformationMessage('已注销');
-        
+
         // 注销后设置上下文变量
         await vscode.commands.executeCommand('setContext', 'programming-practice.isLoggedIn', false);
-        
+
         // 注销后显示登录视图
         LoginView.show();
     });
@@ -136,18 +136,18 @@ export async function activate(context: vscode.ExtensionContext) {
             if (event.selection.length > 0) {
                 const selectedProblem = event.selection[0] as Problem;
                 problemProvider.setCurrentProblemId(selectedProblem.id);
-                
+
                 // 记录用户查看题目的时间 - 明确在此处记录
                 console.log(`用户选择题目: ${selectedProblem.id} (${selectedProblem.label})`);
                 codingDataCollector.recordProblemView(selectedProblem.id);
-                
+
                 // 更新视图
                 sidebarViewProvider.updateProblem(selectedProblem);
-                
+
                 // 检查并显示记录的查看时间（调试用）
                 const viewTime = codingDataCollector.getProblemFirstViewTime(selectedProblem.id);
                 console.log(`题目 ${selectedProblem.id} 查看时间记录状态: ${viewTime ? '已记录' : '未记录'}`);
-                
+
                 // When selecting a problem, also sync any active editor content
                 const activeEditor = vscode.window.activeTextEditor;
                 if (activeEditor) {
@@ -195,11 +195,11 @@ export async function activate(context: vscode.ExtensionContext) {
     const showProblemDetailCommand = vscode.commands.registerCommand('programming-practice.showProblemDetail', (problem: Problem) => {
         problemProvider.setCurrentProblemId(problem.id);
         sidebarViewProvider.updateProblem(problem);
-        
+
         // 当选择题目时，尝试显示编程练习视图
         vscode.commands.executeCommand('programmingPracticeView.focus');
     });
-    
+
     // 将命令添加到订阅中
     context.subscriptions.push(showProblemDetailCommand);
 
@@ -209,30 +209,30 @@ export async function activate(context: vscode.ExtensionContext) {
             vscode.window.showWarningMessage('请先登录以查看编程统计');
             return;
         }
-        
+
         vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
             title: '正在加载编程统计数据...',
             cancellable: false
         }, async () => {
             const stats = await codingDataCollector.getStudentStats();
-            
+
             if (!stats || !stats.success) {
                 vscode.window.showErrorMessage('无法获取编程统计数据');
                 return;
             }
-            
+
             // 显示简要统计信息
             const data = stats.data;
             const basicStats = data.basic_stats;
-            
+
             if (basicStats) {
                 const message = `
                 已尝试题目: ${basicStats.total_problems_attempted || 0}
                 已解决题目: ${basicStats.problems_solved || 0}
                 平均尝试次数: ${Math.round((basicStats.avg_attempts_until_success || 0) * 10) / 10}
                 `;
-                
+
                 vscode.window.showInformationMessage('编程统计数据', {
                     modal: true,
                     detail: message
@@ -242,39 +242,39 @@ export async function activate(context: vscode.ExtensionContext) {
             }
         });
     });
-    
+
     context.subscriptions.push(viewCodingStatsCommand);
 
     // 注册AI代码分析相关命令
     const apiConfigView = new ApiConfigView(context);
-    
+
     context.subscriptions.push(
         vscode.commands.registerCommand('programmingPractice.requestAIFix', async (document: vscode.TextDocument, diagnostic: vscode.Diagnostic, suggestion: string) => {
             await aiCodeAnalyzer.applyAISuggestion(document, diagnostic, suggestion);
         }),
-        
+
         vscode.commands.registerCommand('programmingPractice.requestAIHelp', async (document: vscode.TextDocument, diagnostic: vscode.Diagnostic) => {
             await aiCodeAnalyzer.getAdditionalHelp(document, diagnostic);
         }),
-        
+
         vscode.commands.registerCommand('programmingPractice.toggleAIAnalysis', () => {
             const currentSetting = vscode.workspace.getConfiguration('programmingPractice').get('enableAIAnalysis');
             vscode.workspace.getConfiguration('programmingPractice').update('enableAIAnalysis', !currentSetting, vscode.ConfigurationTarget.Global);
             vscode.window.showInformationMessage(`AI代码分析已${!currentSetting ? '启用' : '禁用'}`);
         }),
-        
+
         vscode.commands.registerCommand('programmingPractice.toggleAICodeCompletion', () => {
             const currentSetting = vscode.workspace.getConfiguration('programmingPractice').get('enableAICodeCompletion');
             vscode.workspace.getConfiguration('programmingPractice').update('enableAICodeCompletion', !currentSetting, vscode.ConfigurationTarget.Global);
             vscode.window.showInformationMessage(`AI代码补全已${!currentSetting ? '启用' : '禁用'}`);
         }),
-        
+
         vscode.commands.registerCommand('programmingPractice.toggleTabCompletion', () => {
             const currentSetting = vscode.workspace.getConfiguration('programmingPractice').get('enableTabCompletion');
             vscode.workspace.getConfiguration('programmingPractice').update('enableTabCompletion', !currentSetting, vscode.ConfigurationTarget.Global);
             vscode.window.showInformationMessage(`Tab智能补全已${!currentSetting ? '启用' : '禁用'}`);
         }),
-        
+
         // 添加配置AI API设置的命令 - 修改为使用配置页面
         vscode.commands.registerCommand('programmingPractice.configureApiSettings', async () => {
             // 打开API配置页面而不是设置
@@ -291,14 +291,14 @@ export async function activate(context: vscode.ExtensionContext) {
                 { modal: true },
                 '启用', '取消'
             );
-            
+
             if (choice === '启用') {
                 // 安全地启用AI功能
                 await vscode.workspace.getConfiguration('programmingPractice').update('enableAICodeCompletion', true, vscode.ConfigurationTarget.Global);
                 await vscode.workspace.getConfiguration('programmingPractice').update('enableAIAnalysis', true, vscode.ConfigurationTarget.Global);
                 // Tab补全可能会干扰输入，所以默认不启用
                 // await vscode.workspace.getConfiguration('programmingPractice').update('enableTabCompletion', true, vscode.ConfigurationTarget.Global);
-                
+
                 vscode.window.showInformationMessage('AI功能已启用，需要重新加载窗口以应用更改', '重新加载').then(selection => {
                     if (selection === '重新加载') {
                         vscode.commands.executeCommand('workbench.action.reloadWindow');
@@ -317,7 +317,7 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
     private _currentProblem?: Problem;
     private _currentCode?: string;
     private _progressiveGuide?: ProgressiveLearningGuide;
-    
+
     constructor(private readonly _extensionUri: vscode.Uri) {
         this._progressiveGuide = ProgressiveLearningGuide.getInstance();
     }
@@ -328,7 +328,7 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
         token: vscode.CancellationToken
     ) {
         this._view = webviewView;
-        
+
         // Configure webview
         webviewView.webview.options = {
             enableScripts: true,
@@ -346,20 +346,20 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                         if (this._currentProblem) {
                             console.log(`正在验证问题 ${this._currentProblem.id} 的解决方案...`);
                             const validator = new SolutionValidator(this._extensionUri.fsPath);
-                            
+
                             const serverUrl = vscode.workspace.getConfiguration('programmingPractice').get('serverUrl') || 'http://localhost:3000';
                             console.log(`使用服务器 ${serverUrl} 进行代码验证`);
-                            
+
                             try {
                                 const result = await validator.validate(this._currentProblem.id, message.code);
-                                
+
                                 // 无论成功失败，总是提交详细的执行信息
                                 const dataCollector = CodingDataCollector.getInstance();
-                                
+
                                 // 显示当前记录的首次查看时间，辅助调试
                                 const viewTime = dataCollector.getProblemFirstViewTime(this._currentProblem.id);
                                 console.log(`提交前获取题目 ${this._currentProblem.id} 首次查看时间: ${viewTime || 'undefined'}`);
-                                
+
                                 const submitSuccess = await dataCollector.submitCodingData(
                                     this._currentProblem.id,
                                     this._currentProblem.label,
@@ -371,7 +371,7 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                                         details: result.executionDetails
                                     }
                                 );
-                                
+
                                 await this._sendMessageToWebview({
                                     command: 'validationResult',
                                     success: result.success,
@@ -380,7 +380,7 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                                 });
                             } catch (validationError) {
                                 console.error('代码验证过程出错:', validationError);
-                                
+
                                 // 即使验证失败，也要尝试记录数据
                                 const dataCollector = CodingDataCollector.getInstance();
                                 await dataCollector.submitCodingData(
@@ -394,7 +394,7 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                                         details: validationError
                                     }
                                 );
-                                
+
                                 await this._sendMessageToWebview({
                                     command: 'validationResult',
                                     success: false,
@@ -455,11 +455,11 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
 
     public async updateProblem(problem: Problem) {
         this._currentProblem = problem;
-        
+
         // 在更新问题详情前，确保查看时间已记录
         const dataCollector = CodingDataCollector.getInstance();
         dataCollector.getProblemFirstViewTime(problem.id);
-        
+
         await this._sendMessageToWebview({
             command: 'updateProblem',
             id: problem.id,
@@ -470,7 +470,7 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
             inputExample: problem.inputExample || '',  // 添加输入样例
             outputExample: problem.outputExample || '' // 添加输出样例
         });
-        
+
         // 确保视图可见
         if (this._view) {
             this._view.show(true); // 显示并聚焦视图
@@ -489,49 +489,49 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
             // 读取输入数组和目标值
             vector<int> nums;
             int num, target;
-            
+
             // 读取所有输入数字，直到EOF
             while (cin >> num) {
                 nums.push_back(num);
             }
-            
+
             // 最后一个数字是目标和
             if (!nums.empty()) {
                 target = nums.back();
                 nums.pop_back();  // 从数组中移除目标和
             }
-            
+
             // 在这里实现你的解决方案
             // 要求：找到两个数的和等于target，返回它们的下标
-            
+
             // 输出结果
             json result = json::array({0, 1});  // 替换成实际找到的下标
             cout << result << endl;
-            
+
             return 0;
         }`,
             '2': `#include <iostream>
         #include <string>
         using namespace std;
-        
+
         int main() {
             int x;
             cin >> x;
-            
+
             // 在这里实现你的解决方案
             // 要求：判断x是否为回文数
-            
+
             // 输出结果
             cout << "true" << endl;  // 或 cout << "false" << endl;
-            
+
             return 0;
-            
+
         }`,
         };
-        
+
         return templates[problemId] || '';
     }
-    
+
     private _getWebviewContent() {
         return `<!DOCTYPE html>.
         <html lang="en">
@@ -778,6 +778,21 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                 .guide-content.hidden {
                     display: none;
                 }
+                .guide-content.streaming {
+                    position: relative;
+                }
+                .guide-content.streaming::after {
+                    content: '|';
+                    display: inline-block;
+                    animation: blink 1s step-end infinite;
+                    color: var(--vscode-editor-foreground);
+                    font-weight: bold;
+                    margin-left: 2px;
+                }
+                @keyframes blink {
+                    0%, 100% { opacity: 1; }
+                    50% { opacity: 0; }
+                }
                 .unlock-button {
                     background-color: var(--vscode-button-background);
                     color: var(--vscode-button-foreground);
@@ -839,7 +854,7 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                     <div id="no-problem-selected" class="no-problem">
                         请从左侧题目列表中选择一个题目开始练习
                     </div>
-                    
+
                     <div id="problem-content" style="display: none;">
                         <div class="problem-header">
                             <h3 id="problem-title"></h3>
@@ -847,7 +862,7 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                         </div>
                         <div class="section-title">题目详情：</div>
                         <div id="problem-description"></div>
-                        
+
                         <div class="two-column-container">
                             <div class="column">
                                 <div class="section-title">输入样例：</div>
@@ -858,7 +873,7 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                                 <div id="output-example" class="example-block"></div>
                             </div>
                         </div>
-                        
+
                         <!-- 渐进式学习指导容器 -->
                         <div class="learning-guide-container">
                             <div class="guide-header">
@@ -872,13 +887,13 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                         </div>
                     </div>
                 </div>
-                
+
                 <div class="editor-container">
                     <!-- 删除AI生成解答按钮和容器 -->
                     <textarea id="code-editor" spellcheck="false" placeholder="选择题目后，代码将在这里显示..."></textarea>
                 </div>
             </div>
-            
+
             <div class="controls-container">
                 <button id="submit-button" class="submit-button" onclick="submitSolution()">
                     提交解答
@@ -890,13 +905,13 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                 const vscode = acquireVsCodeApi();
                 let currentProblemId = '';
                 // 删除isGeneratingCode变量
-                
+
                 // 渐进式学习状态
                 let learningSteps = {
-                    unlockedSteps: ['problem-analysis'], 
+                    unlockedSteps: ['problem-analysis'],
                     currentStep: null
                 };
-                
+
                 // 定义步骤类型和描述
                 const stepTypes = {
                     'problem-analysis': '智能审题',
@@ -905,7 +920,7 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                     'detailed-guidance': '详细指导',
                     'guided-code': '指导代码'
                 };
-                
+
                 // 所有步骤的顺序
                 const stepOrder = [
                     'problem-analysis',
@@ -914,28 +929,28 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                     'detailed-guidance',
                     'guided-code'
                 ];
-                
+
                 // Initialize state
                 const state = vscode.getState() || { code: '' };
                 document.getElementById('code-editor').value = state.code;
 
                 // Notify webview is ready
                 vscode.postMessage({ command: 'ready' });
-                
+
                 // 渲染步骤按钮
                 function renderStepButtons() {
                     const stepsContainer = document.getElementById('guide-steps');
                     stepsContainer.innerHTML = '';
-                    
+
                     stepOrder.forEach(step => {
                         const isUnlocked = learningSteps.unlockedSteps.includes(step);
                         const isActive = learningSteps.currentStep === step;
-                        
+
                         const stepButton = document.createElement('div');
                         stepButton.className = \`guide-step \${isUnlocked ? 'unlocked' : ''} \${isActive ? 'active' : ''}\`;
                         stepButton.textContent = stepTypes[step];
                         stepButton.dataset.step = step;
-                        
+
                         if (isUnlocked) {
                             // 添加刷新按钮
                             const refreshBtn = document.createElement('button');
@@ -947,39 +962,39 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                                 requestGuidance(step, true);
                             };
                             stepButton.appendChild(refreshBtn);
-                            
+
                             stepButton.addEventListener('click', () => requestGuidance(step));
                         }
-                        
+
                         stepsContainer.appendChild(stepButton);
                     });
-                    
+
                     // 调整解锁按钮状态
                     document.getElementById('unlock-next-step').disabled = learningSteps.unlockedSteps.length >= stepOrder.length;
                 }
-                
+
                 // 请求学习指导
                 function requestGuidance(step, forceRefresh = false) {
                     // 如果未选择问题，则不操作
                     if (!currentProblemId) return;
-                    
+
                     // 设置当前步骤
                     learningSteps.currentStep = step;
-                    
+
                     // 更新步骤按钮状态
                     renderStepButtons();
-                    
+
                     // 设置步骤按钮为加载状态
                     const stepButton = document.querySelector(\`.guide-step[data-step="\${step}"]\`);
                     if (stepButton) {
                         stepButton.classList.add('loading');
                     }
-                    
+
                     // 显示内容区域
                     const contentArea = document.getElementById('guide-content');
                     contentArea.textContent = '加载中...';
                     contentArea.classList.remove('hidden');
-                    
+
                     // 发送请求，添加forceRefresh参数
                     vscode.postMessage({
                         command: 'requestGuidance',
@@ -988,108 +1003,130 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                         forceRefresh: forceRefresh
                     });
                 }
-                
+
                 // 解锁下一个学习步骤
                 function unlockNextStep() {
                     if (!currentProblemId) return;
-                    
+
                     vscode.postMessage({
                         command: 'unlockNextStep',
                         problemId: currentProblemId
                     });
                 }
-                
+
                 window.addEventListener('message', event => {
                     const message = event.data;
                     switch (message.command) {
                         case 'updateProblem':
                             currentProblemId = message.id;
-                            
+
                             // 显示题目内容，隐藏"未选择题目"消息
                             document.getElementById('no-problem-selected').style.display = 'none';
                             document.getElementById('problem-content').style.display = 'block';
-                            
+
                             document.getElementById('problem-title').textContent = message.title;
                             document.getElementById('problem-description').textContent = message.description || '无题目描述';
                             document.getElementById('problem-difficulty').textContent = message.difficulty;
-                            
+
                             // 显示输入和输出样例
                             document.getElementById('input-example').textContent = message.inputExample || '无输入样例';
                             document.getElementById('output-example').textContent = message.outputExample || '无输出样例';
-                            
+
                             // Only update editor with template if no code is currently shown
                             const editor = document.getElementById('code-editor');
                             if (!editor.value.trim()) {
                                 editor.value = message.template || '';
                                 vscode.setState({ code: editor.value });
                             }
-                            
+
                             // Reset validation result
                             const resultDiv = document.getElementById('validation-result');
                             resultDiv.className = 'result-container';
                             resultDiv.textContent = '';
 
                             // 删除AI生成按钮状态更新相关代码
-                            
+
                             // 重置渐进式学习状态
                             learningSteps = {
                                 unlockedSteps: ['problem-analysis'],
                                 currentStep: null
                             };
                             renderStepButtons();
-                            
+
                             // 隐藏指导内容
                             document.getElementById('guide-content').classList.add('hidden');
                             break;
-                            
+
                         case 'updateCode':
                             // Update the code from the active editor
                             const codeEditor = document.getElementById('code-editor');
                             codeEditor.value = message.code;
                             vscode.setState({ code: message.code });
                             break;
-                            
+
                         case 'validationResult':
                             const resultElement = document.getElementById('validation-result');
                             resultElement.textContent = message.message;
                             resultElement.className = 'result-container visible ' + (message.success ? 'success' : 'error');
-                            
+
                             // Enable/disable submit button
                             document.getElementById('submit-button').disabled = false;
-                            
+
                             // 删除AI生成代码结果相关代码
                             break;
-                            
+
                         // 处理渐进式学习消息
                         case 'guidanceContent':
-                            // 移除加载状态
-                            const stepBtn = document.querySelector(\`.guide-step[data-step="\${message.step}"]\`);
-                            if (stepBtn) {
-                                stepBtn.classList.remove('loading');
+                            // 移除加载状态（仅在完成时）
+                            if (message.done) {
+                                const stepBtn = document.querySelector(\`.guide-step[data-step="\${message.step}"]\`);
+                                if (stepBtn) {
+                                    stepBtn.classList.remove('loading');
+                                }
                             }
-                            
+
                             // 显示内容
                             const guideContent = document.getElementById('guide-content');
-                            guideContent.textContent = message.content;
+
+                            // 处理流式输出
+                            if (message.streaming) {
+                                // 首次流式输出时初始化内容区域
+                                if (!guideContent.classList.contains('streaming')) {
+                                    guideContent.classList.add('streaming');
+                                    guideContent.innerHTML = '';
+                                }
+
+                                // 更新内容
+                                guideContent.textContent = message.content;
+
+                                // 如果流结束，移除流式标记
+                                if (message.done) {
+                                    guideContent.classList.remove('streaming');
+                                }
+                            } else {
+                                // 非流式输出直接设置内容
+                                guideContent.textContent = message.content;
+                            }
+
                             guideContent.classList.remove('hidden');
                             break;
-                            
+
                         case 'stepUnlocked':
                             // 添加新解锁的步骤
                             if (!learningSteps.unlockedSteps.includes(message.step)) {
                                 learningSteps.unlockedSteps.push(message.step);
                             }
-                            
+
                             // 设置当前步骤
                             learningSteps.currentStep = message.step;
-                            
+
                             // 更新步骤按钮
                             renderStepButtons();
-                            
+
                             // 自动请求新解锁步骤的指导
                             requestGuidance(message.step);
                             break;
-                            
+
                         case 'guidanceLoading':
                             // 处理加载状态
                             const loadingStepBtn = document.querySelector(\`.guide-step[data-step="\${message.step}"]\`);
@@ -1103,19 +1140,19 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                             break;
                     }
                 });
-                
+
                 function submitSolution() {
                     const submitButton = document.getElementById('submit-button');
                     const code = document.getElementById('code-editor').value;
-                    
+
                     // Disable submit button while processing
                     submitButton.disabled = true;
-                    
+
                     // Clear previous result
                     const resultDiv = document.getElementById('validation-result');
                     resultDiv.className = 'result-container';
                     resultDiv.textContent = '';
-                    
+
                     vscode.postMessage({
                         command: 'submit',
                         code: code
@@ -1123,7 +1160,7 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
                 }
 
                 // 删除generateAiSolution函数
-                
+
                 // 初始渲染步骤按钮
                 renderStepButtons();
             </script>
@@ -1138,40 +1175,55 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
         if (!this._currentProblem || !this._progressiveGuide) {
             return;
         }
-        
+
         try {
             // 设置当前学习步骤
             this._progressiveGuide.setCurrentStep(problemId, stepType);
-            
+
             // 显示加载状态
             await this._sendMessageToWebview({
                 command: 'guidanceLoading',
                 step: stepType,
                 loading: true
             });
-            
-            // 获取指导内容，传入forceRefresh参数决定是否强制刷新
-            const guidanceContent = await this._progressiveGuide.getGuidanceContent(
-                problemId,
-                this._currentProblem.fullDescription,
-                stepType,
-                forceRefresh
-            );
-            
-            // 发送指导内容到Webview
+
+            // 初始化内容区域
             await this._sendMessageToWebview({
                 command: 'guidanceContent',
                 step: stepType,
-                content: guidanceContent,
-                problemId: problemId
+                content: '',
+                problemId: problemId,
+                streaming: true,
+                done: false
             });
+
+            // 使用流式API获取指导内容
+            await this._progressiveGuide.getStreamingGuidanceContent(
+                problemId,
+                this._currentProblem.fullDescription,
+                stepType,
+                // 流式更新回调
+                async (content: string, isDone: boolean) => {
+                    await this._sendMessageToWebview({
+                        command: 'guidanceContent',
+                        step: stepType,
+                        content: content,
+                        problemId: problemId,
+                        streaming: true,
+                        done: isDone
+                    });
+                },
+                forceRefresh
+            );
         } catch (error) {
             console.error('获取学习指导内容失败:', error);
             await this._sendMessageToWebview({
                 command: 'guidanceContent',
                 step: stepType,
                 content: `获取学习指导失败: ${error instanceof Error ? error.message : String(error)}`,
-                error: true
+                error: true,
+                streaming: false,
+                done: true
             });
         } finally {
             // 关闭加载状态
@@ -1182,13 +1234,13 @@ class SidebarViewProvider implements vscode.WebviewViewProvider {
             });
         }
     }
-    
+
     /**
      * 解锁下一个学习步骤
      */
     private async unlockNextLearningStep(problemId: string) {
         if (!this._progressiveGuide) return;
-        
+
         const nextStep = this._progressiveGuide.unlockNextStep(problemId);
         if (nextStep) {
             await this._sendMessageToWebview({

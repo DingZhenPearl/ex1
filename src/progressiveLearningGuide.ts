@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { AICodeAnalyzer } from './aiCodeAnalyzer';
+import fetch from 'node-fetch';
 
 /**
  * 渐进式学习辅导类型
@@ -22,6 +23,13 @@ export interface LearningProgress {
 }
 
 /**
+ * 流式内容更新回调
+ */
+export interface StreamUpdateCallback {
+    (content: string, isDone: boolean): void;
+}
+
+/**
  * 渐进式智能编程辅导服务
  */
 export class ProgressiveLearningGuide {
@@ -30,11 +38,13 @@ export class ProgressiveLearningGuide {
     private learningProgressMap: Map<string, LearningProgress> = new Map();
     // 添加缓存Map来存储每个问题ID和步骤类型对应的内容
     private contentCache: Map<string, Map<GuideStepType, string>> = new Map();
-    
+    // 服务器API基础URL
+    private apiBaseUrl: string = 'http://localhost:3000/api/plugin';
+
     private constructor() {
         this.aiAnalyzer = AICodeAnalyzer.getInstance();
     }
-    
+
     /**
      * 获取单例实例
      */
@@ -44,7 +54,7 @@ export class ProgressiveLearningGuide {
         }
         return ProgressiveLearningGuide.instance;
     }
-    
+
     /**
      * 获取问题的学习进度
      */
@@ -59,7 +69,7 @@ export class ProgressiveLearningGuide {
         }
         return this.learningProgressMap.get(problemId)!;
     }
-    
+
     /**
      * 解锁下一步学习阶段
      */
@@ -72,7 +82,7 @@ export class ProgressiveLearningGuide {
             GuideStepType.DetailedGuidance,
             GuideStepType.GuidedCode
         ];
-        
+
         // 找到当前未解锁的下一个步骤
         for (const step of allSteps) {
             if (!progress.unlockedSteps.includes(step)) {
@@ -81,10 +91,10 @@ export class ProgressiveLearningGuide {
                 return step;
             }
         }
-        
+
         return undefined; // 所有步骤都已解锁
     }
-    
+
     /**
      * 设置当前学习步骤
      */
@@ -96,12 +106,12 @@ export class ProgressiveLearningGuide {
         }
         return false;
     }
-    
+
     /**
-     * 获取渐进式学习指导内容
+     * 获取渐进式学习指导内容（非流式，兼容旧版本）
      */
     public async getGuidanceContent(
-        problemId: string, 
+        problemId: string,
         problemDescription: string,
         step: GuideStepType,
         forceRefresh: boolean = false
@@ -113,31 +123,187 @@ export class ProgressiveLearningGuide {
                 console.log(`使用缓存内容: 问题${problemId}, 步骤${step}`);
                 return cachedContent;
             }
-            
+
             // 不同步骤使用不同的提示词
             const prompt = this.buildPromptForStep(problemDescription, step);
-            
+
             // 设置不同步骤的系统角色描述
             const systemRole = this.getSystemRoleForStep(step);
-            
-            // 调用AI API获取指导内容
-            const content = await this.aiAnalyzer.callAIApi(
-                prompt,
-                systemRole,
-                0.3,
-                3000
-            );
-            
+
+            // 调用服务器API获取指导内容（非流式）
+            const response = await fetch(`${this.apiBaseUrl}/progressive-guide`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    prompt,
+                    systemRole,
+                    temperature: 0.3,
+                    maxTokens: 3000
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`服务器响应错误: ${response.status} ${response.statusText}`);
+            }
+
+            const data = await response.json();
+
+            if (!data.success) {
+                throw new Error(data.error || '未知错误');
+            }
+
+            const content = data.content;
+
             // 缓存获取的内容
             this.setCachedContent(problemId, step, content);
-            
+
             return content;
         } catch (error) {
             console.error(`获取${step}指导内容失败:`, error);
-            return `获取学习指导失败: ${error instanceof Error ? error.message : String(error)}`;
+
+            // 如果服务器API调用失败，尝试使用旧的方法作为备用
+            try {
+                console.log('尝试使用备用方法获取内容...');
+                const prompt = this.buildPromptForStep(problemDescription, step);
+                const systemRole = this.getSystemRoleForStep(step);
+
+                const content = await this.aiAnalyzer.callAIApi(
+                    prompt,
+                    systemRole,
+                    0.3,
+                    3000
+                );
+
+                this.setCachedContent(problemId, step, content);
+                return content;
+            } catch (backupError) {
+                console.error('备用方法也失败:', backupError);
+                return `获取学习指导失败: ${error instanceof Error ? error.message : String(error)}`;
+            }
         }
     }
-    
+
+    /**
+     * 流式获取渐进式学习指导内容
+     */
+    public async getStreamingGuidanceContent(
+        problemId: string,
+        problemDescription: string,
+        step: GuideStepType,
+        callback: StreamUpdateCallback,
+        forceRefresh: boolean = false
+    ): Promise<void> {
+        try {
+            // 检查缓存是否存在
+            const cachedContent = this.getCachedContent(problemId, step);
+            if (cachedContent && !forceRefresh) {
+                console.log(`使用缓存内容: 问题${problemId}, 步骤${step}`);
+                // 立即返回缓存内容
+                callback(cachedContent, true);
+                return;
+            }
+
+            // 不同步骤使用不同的提示词
+            const prompt = this.buildPromptForStep(problemDescription, step);
+
+            // 设置不同步骤的系统角色描述
+            const systemRole = this.getSystemRoleForStep(step);
+
+            // 调用流式API
+            const response = await fetch(`${this.apiBaseUrl}/progressive-guide/stream`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    prompt,
+                    systemRole,
+                    temperature: 0.3,
+                    maxTokens: 3000
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`服务器响应错误: ${response.status} ${response.statusText}`);
+            }
+
+            // 处理流式响应
+            let fullContent = '';
+
+            // 设置响应处理器
+            response.body.on('data', (chunk: Buffer) => {
+                // 解码收到的数据
+                const chunkText = chunk.toString('utf-8');
+
+                // 处理SSE格式的数据
+                const lines = chunkText.split('\n\n');
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        try {
+                            const data = JSON.parse(line.substring(6));
+
+                            if (data.error) {
+                                throw new Error(data.error);
+                            }
+
+                            if (data.token) {
+                                fullContent += data.token;
+                                callback(fullContent, false);
+                            }
+
+                            if (data.done) {
+                                // 如果服务器返回了完整响应，使用它
+                                if (data.fullResponse) {
+                                    fullContent = data.fullResponse;
+                                }
+
+                                // 缓存完整内容
+                                this.setCachedContent(problemId, step, fullContent);
+                                callback(fullContent, true);
+                            }
+                        } catch (parseError) {
+                            console.error('解析SSE数据失败:', parseError);
+                        }
+                    }
+                }
+            });
+
+            // 处理流结束
+            response.body.on('end', () => {
+                // 流结束但没有收到完成信号
+                if (fullContent) {
+                    this.setCachedContent(problemId, step, fullContent);
+                    callback(fullContent, true);
+                }
+            });
+
+            // 处理错误
+            response.body.on('error', (err) => {
+                console.error('流读取错误:', err);
+                callback(`流读取错误: ${err.message}`, true);
+            });
+
+            // 缓存完整内容
+            if (fullContent) {
+                this.setCachedContent(problemId, step, fullContent);
+            }
+
+        } catch (error) {
+            console.error(`流式获取${step}指导内容失败:`, error);
+
+            // 尝试使用非流式方法作为备用
+            try {
+                console.log('尝试使用备用方法获取内容...');
+                const content = await this.getGuidanceContent(problemId, problemDescription, step, forceRefresh);
+                callback(content, true);
+            } catch (backupError) {
+                callback(`获取学习指导失败: ${error instanceof Error ? error.message : String(error)}`, true);
+            }
+        }
+    }
+
     /**
      * 获取缓存的内容
      */
@@ -148,7 +314,7 @@ export class ProgressiveLearningGuide {
         }
         return undefined;
     }
-    
+
     /**
      * 设置缓存内容
      */
@@ -158,14 +324,14 @@ export class ProgressiveLearningGuide {
         }
         this.contentCache.get(problemId)!.set(step, content);
     }
-    
+
     /**
      * 清除指定问题的缓存内容
      */
     public clearCache(problemId: string): void {
         this.contentCache.delete(problemId);
     }
-    
+
     /**
      * 清除指定问题的特定步骤缓存
      */
@@ -175,7 +341,7 @@ export class ProgressiveLearningGuide {
             problemCache.delete(step);
         }
     }
-    
+
     /**
      * 为不同步骤构建提示词
      */
@@ -183,7 +349,7 @@ export class ProgressiveLearningGuide {
         switch (step) {
             case GuideStepType.ProblemAnalysis:
                 return `我需要理解这道C++编程题目。请帮我深入分析题目要求，明确输入输出，并解释可能的解题思路，请使用C++语言的视角进行分析。
-                
+
 题目描述:
 ${problemDescription}
 
@@ -194,10 +360,10 @@ ${problemDescription}
 4. 分析样例，解释为什么示例输入得到相应输出
 5. 边界情况思考：需要注意哪些边界情况和特殊输入
 6. C++特有的考虑点：如内存管理、STL使用等`;
-                
+
             case GuideStepType.CodeStructure:
                 return `我正在学习如何使用C++解决这个编程问题，现在需要了解C++解决方案的整体结构和框架。请不要给我完整代码，只需提供C++解决方案的基本框架和结构。
-                
+
 题目描述:
 ${problemDescription}
 
@@ -207,10 +373,10 @@ ${problemDescription}
 3. 各部分功能的简要说明
 4. 可能的时间和空间复杂度分析
 5. 需要包含的C++头文件`;
-                
+
             case GuideStepType.KeyHints:
                 return `我正在尝试使用C++解决这个编程问题，但需要一些关键点的提示而不是完整解答。请给我一些C++编程相关的思考方向和关键提示。
-                
+
 题目描述:
 ${problemDescription}
 
@@ -219,10 +385,10 @@ ${problemDescription}
 2. 使用C++可能遇到的常见错误或陷队
 3. 算法中的关键步骤或C++ STL使用的提示
 4. 不要提供完整的代码实现，只给出C++实现关键部分的思路`;
-                
+
             case GuideStepType.DetailedGuidance:
                 return `我需要更详细的指导来用C++解决这个编程问题。请提供详细的C++解题思路和算法步骤。
-                
+
 题目描述:
 ${problemDescription}
 
@@ -233,7 +399,7 @@ ${problemDescription}
 4. 如何使用C++处理边界情况和异常
 5. 不同C++解法的对比（如有）
 6. 优化建议和C++ STL的合理使用`;
-                
+
             case GuideStepType.GuidedCode:
                 return `请为这个编程问题提供有详细注释的C++指导代码。我需要完整且可运行的C++代码，但更重要的是详细解释每个关键步骤和思路。
 
@@ -246,15 +412,15 @@ ${problemDescription}
 3. C++算法思想和关键操作的解释
 4. 时间和空间复杂度分析
 5. C++特有功能的使用说明（如STL容器、智能指针等）`;
-                
+
             default:
                 return `请使用C++分析这个编程问题并提供解题思路。
-                
+
 题目描述:
 ${problemDescription}`;
         }
     }
-    
+
     /**
      * 为不同步骤获取系统角色描述
      */
@@ -262,19 +428,19 @@ ${problemDescription}`;
         switch (step) {
             case GuideStepType.ProblemAnalysis:
                 return "你是一位专业的C++算法教师，擅长帮助学生理解和分析C++编程问题。你的目标是引导学生深入理解问题，而不是直接提供解答。请始终使用C++语言的视角进行分析。";
-                
+
             case GuideStepType.CodeStructure:
                 return "你是一位C++编程设计专家，擅长帮助学生规划C++解决方案的整体结构。你的目标是提供C++解决方案的框架，而不是具体实现细节。请始终使用C++编程范式和实践。";
-                
+
             case GuideStepType.KeyHints:
                 return "你是一位C++编程教练，善于提供C++编程相关的关键性提示以帮助学生突破思维瓶颈。你的回答应该点到为止，引导学生思考C++实现方案而非直接给出解答。";
-                
+
             case GuideStepType.DetailedGuidance:
                 return "你是一位C++编程导师，善于提供详细且系统的C++算法指导。你的回答要有条理地讲解C++解题思路和关键步骤，但仍鼓励学生自己实现代码。请确保所有建议都符合C++编程实践。";
-                
+
             case GuideStepType.GuidedCode:
                 return "你是一位C++编程实践指导者，善于提供有详细注释的C++实例代码。你的C++代码注释应清晰解释每个关键步骤的思路和目的，帮助学生理解C++实现细节。请确保代码符合C++最佳实践和风格指南。";
-                
+
             default:
                 return "你是一位C++编程教育专家，擅长通过渐进式指导帮助学生学习C++编程和解决问题。所有回答应关注C++编程语言的特性和最佳实践。";
         }
