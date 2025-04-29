@@ -44,10 +44,10 @@ export class ApiConfigView {
         this.panel.webview.onDidReceiveMessage(async message => {
             switch (message.command) {
                 case 'saveConfig':
-                    await this.saveConfig(message.apiKey, message.apiEndpoint, message.modelName);
+                    await this.saveConfig(message.apiType, message.apiKey, message.apiEndpoint, message.modelName);
                     break;
                 case 'testConnection':
-                    await this.testConnection(message.apiKey, message.apiEndpoint, message.modelName);
+                    await this.testConnection(message.apiType, message.apiKey, message.apiEndpoint, message.modelName);
                     break;
                 case 'requestCurrentConfig':
                     await this.sendCurrentConfig();
@@ -68,6 +68,9 @@ export class ApiConfigView {
         const apiKey = config.get<string>('aiApiKey') || '';
         const apiEndpoint = config.get<string>('aiApiEndpoint') || '';
         const modelName = config.get<string>('aiModelName') || 'Qwen/Qwen2.5-Coder-7B-Instruct';
+
+        // 根据apiKey判断API类型
+        const apiType = apiKey && apiKey === 'ollama' ? 'ollama' : 'custom';
 
         return `
         <!DOCTYPE html>
@@ -114,7 +117,7 @@ export class ApiConfigView {
                     font-weight: bold;
                     color: var(--vscode-foreground);
                 }
-                input[type="text"] {
+                input[type="text"], select {
                     width: 100%;
                     padding: 8px;
                     border: 1px solid var(--vscode-input-border);
@@ -198,33 +201,44 @@ export class ApiConfigView {
                     <div class="header-icon">🔌</div>
                     <h1>AI API 配置</h1>
                 </div>
-                
+
                 <div class="note">
                     <strong>注意:</strong> 本配置用于设置AI服务连接。默认提供免费API服务，如需更改，请填写相应配置。
                 </div>
-                
+
                 <div class="section-title">AI 连接设置</div>
-                
+
                 <div class="form-group">
-                    <label for="apiKey">API 密钥 (API Key)</label>
-                    <input type="text" id="apiKey" value="${this.escapeHtml(apiKey)}" placeholder="输入API密钥...">
-                    <div class="hint">AI大模型的访问密钥，默认使用免费密钥</div>
+                    <label for="apiType">API 类型</label>
+                    <select id="apiType">
+                        <option value="custom" ${apiType === 'custom' ? 'selected' : ''}>自定义API</option>
+                        <option value="ollama" ${apiType === 'ollama' ? 'selected' : ''}>本地Ollama</option>
+                    </select>
+                    <div class="hint">选择API类型，本地Ollama使用本地部署的模型</div>
                 </div>
-                
-                <div class="form-group">
-                    <label for="apiEndpoint">API 终端点 (API Endpoint)</label>
-                    <input type="text" id="apiEndpoint" value="${this.escapeHtml(apiEndpoint)}" placeholder="https://api.example.com/v1/chat/completions">
-                    <div class="hint">API服务器地址，默认为智谱AI服务器</div>
+
+                <div id="customApiSettings" style="${apiType === 'custom' ? '' : 'display: none;'}">
+                    <div class="form-group">
+                        <label for="apiKey">API 密钥 (API Key)</label>
+                        <input type="text" id="apiKey" value="${this.escapeHtml(apiKey)}" placeholder="输入API密钥...">
+                        <div class="hint">AI大模型的访问密钥，默认使用免费密钥</div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="apiEndpoint">API 终端点 (API Endpoint)</label>
+                        <input type="text" id="apiEndpoint" value="${this.escapeHtml(apiEndpoint)}" placeholder="https://api.example.com/v1/chat/completions">
+                        <div class="hint">API服务器地址，默认为智谱AI服务器</div>
+                    </div>
                 </div>
-                
+
                 <div class="form-group">
                     <label for="modelName">模型名称 (Model Name)</label>
                     <input type="text" id="modelName" value="${this.escapeHtml(modelName)}" placeholder="Qwen/Qwen2.5-Coder-7B-Instruct">
-                    <div class="hint">模型标识名称，默认使用Qwen2.5-Coder-7B模型</div>
+                    <div class="hint" id="modelNameHint">${apiType === 'ollama' ? '本地Ollama模型名称，默认使用qwen3:8b' : '模型标识名称，默认使用Qwen2.5-Coder-7B模型'}</div>
                 </div>
-                
+
                 <div id="message" class="message"></div>
-                
+
                 <div class="button-container">
                     <div>
                         <button id="testButton">测试连接</button>
@@ -235,99 +249,165 @@ export class ApiConfigView {
                     </div>
                 </div>
             </div>
-            
+
             <script>
                 // 获取DOM元素
+                const apiTypeSelect = document.getElementById('apiType');
+                const customApiSettings = document.getElementById('customApiSettings');
                 const apiKeyInput = document.getElementById('apiKey');
                 const apiEndpointInput = document.getElementById('apiEndpoint');
                 const modelNameInput = document.getElementById('modelName');
+                const modelNameHint = document.getElementById('modelNameHint');
                 const saveButton = document.getElementById('saveButton');
                 const testButton = document.getElementById('testButton');
                 const resetButton = document.getElementById('resetButton');
                 const messageDiv = document.getElementById('message');
-                
+
+                // 处理API类型切换
+                apiTypeSelect.addEventListener('change', () => {
+                    const isCustom = apiTypeSelect.value === 'custom';
+                    customApiSettings.style.display = isCustom ? 'block' : 'none';
+
+                    // 更新模型名称提示
+                    if (apiTypeSelect.value === 'ollama') {
+                        modelNameHint.textContent = '本地Ollama模型名称，默认使用qwen3:8b';
+                        if (!modelNameInput.value || modelNameInput.value === 'Qwen/Qwen2.5-Coder-7B-Instruct') {
+                            modelNameInput.value = 'qwen3:8b';
+                        }
+                        // 设置默认的Ollama API密钥和端点
+                        if (!isCustom) {
+                            apiKeyInput.value = 'ollama';
+                            apiEndpointInput.value = 'http://localhost:11434/v1/';
+                        }
+                    } else {
+                        modelNameHint.textContent = '模型标识名称，默认使用Qwen2.5-Coder-7B模型';
+                        if (modelNameInput.value === 'qwen3:8b') {
+                            modelNameInput.value = 'Qwen/Qwen2.5-Coder-7B-Instruct';
+                        }
+                    }
+                });
+
                 // 与VSCode通信的对象
                 const vscode = acquireVsCodeApi();
-                
+
                 // 加载时请求当前配置
                 document.addEventListener('DOMContentLoaded', () => {
                     vscode.postMessage({
                         command: 'requestCurrentConfig'
                     });
                 });
-                
+
                 // 保存配置
                 saveButton.addEventListener('click', () => {
                     setMessage('正在保存...', 'info');
-                    
+
+                    // 如果选择了ollama，确保设置了正确的API密钥和端点
+                    if (apiTypeSelect.value === 'ollama') {
+                        apiKeyInput.value = 'ollama';
+                        apiEndpointInput.value = 'http://localhost:11434/v1/';
+                    }
+
                     vscode.postMessage({
                         command: 'saveConfig',
+                        apiType: apiTypeSelect.value,
                         apiKey: apiKeyInput.value.trim(),
                         apiEndpoint: apiEndpointInput.value.trim(),
                         modelName: modelNameInput.value.trim()
                     });
                 });
-                
+
                 // 测试连接
                 testButton.addEventListener('click', () => {
                     // 显示测试中状态
                     testButton.disabled = true;
                     testButton.innerHTML = '<span class="loading"></span> 测试中...';
                     setMessage('正在测试连接...', 'info');
-                    
+
+                    // 如果选择了ollama，确保设置了正确的API密钥和端点
+                    if (apiTypeSelect.value === 'ollama') {
+                        apiKeyInput.value = 'ollama';
+                        apiEndpointInput.value = 'http://localhost:11434/v1/';
+                    }
+
                     vscode.postMessage({
                         command: 'testConnection',
+                        apiType: apiTypeSelect.value,
                         apiKey: apiKeyInput.value.trim(),
                         apiEndpoint: apiEndpointInput.value.trim(),
                         modelName: modelNameInput.value.trim()
                     });
                 });
-                
+
                 // 重置为默认值
                 resetButton.addEventListener('click', () => {
                     vscode.postMessage({
                         command: 'resetToDefault'
                     });
                 });
-                
+
                 // 显示消息
                 function setMessage(text, type) {
                     messageDiv.textContent = text;
                     messageDiv.style.display = 'block';
                     messageDiv.className = 'message ' + type;
                 }
-                
+
                 // 接收来自VSCode的消息
                 window.addEventListener('message', event => {
                     const message = event.data;
-                    
+
                     switch (message.command) {
                         case 'configSaved':
                             setMessage('配置已成功保存', 'success');
                             break;
-                        
+
                         case 'testResult':
                             // 恢复测试按钮状态
                             testButton.disabled = false;
                             testButton.textContent = '测试连接';
-                            
+
                             if (message.success) {
                                 setMessage('连接测试成功！', 'success');
                             } else {
                                 setMessage('连接测试失败: ' + message.error, 'error');
                             }
                             break;
-                        
+
                         case 'currentConfig':
+                            apiTypeSelect.value = message.apiType || 'custom';
                             apiKeyInput.value = message.apiKey || '';
                             apiEndpointInput.value = message.apiEndpoint || '';
                             modelNameInput.value = message.modelName || '';
+
+                            // 根据API类型更新UI
+                            const isCustom = apiTypeSelect.value === 'custom';
+                            customApiSettings.style.display = isCustom ? 'block' : 'none';
+
+                            // 更新模型名称提示
+                            if (apiTypeSelect.value === 'ollama') {
+                                modelNameHint.textContent = '本地Ollama模型名称，默认使用qwen3:8b';
+                            } else {
+                                modelNameHint.textContent = '模型标识名称，默认使用Qwen2.5-Coder-7B模型';
+                            }
                             break;
-                        
+
                         case 'resetComplete':
+                            apiTypeSelect.value = message.apiType || 'custom';
                             apiKeyInput.value = message.apiKey || '';
                             apiEndpointInput.value = message.apiEndpoint || '';
                             modelNameInput.value = message.modelName || '';
+
+                            // 根据API类型更新UI
+                            const isCustomAfterReset = apiTypeSelect.value === 'custom';
+                            customApiSettings.style.display = isCustomAfterReset ? 'block' : 'none';
+
+                            // 更新模型名称提示
+                            if (apiTypeSelect.value === 'ollama') {
+                                modelNameHint.textContent = '本地Ollama模型名称，默认使用qwen3:8b';
+                            } else {
+                                modelNameHint.textContent = '模型标识名称，默认使用Qwen2.5-Coder-7B模型';
+                            }
+
                             setMessage('已重置为默认配置', 'success');
                             break;
                     }
@@ -361,8 +441,12 @@ export class ApiConfigView {
         const apiEndpoint = config.get('aiApiEndpoint') || '';
         const modelName = config.get('aiModelName') || 'Qwen/Qwen2.5-Coder-7B-Instruct';
 
+        // 根据apiKey判断API类型
+        const apiType = apiKey && apiKey === 'ollama' ? 'ollama' : 'custom';
+
         this.panel.webview.postMessage({
             command: 'currentConfig',
+            apiType,
             apiKey,
             apiEndpoint,
             modelName
@@ -372,20 +456,33 @@ export class ApiConfigView {
     /**
      * 保存配置
      */
-    private async saveConfig(apiKey: string, apiEndpoint: string, modelName: string) {
+    private async saveConfig(apiType: string, apiKey: string, apiEndpoint: string, modelName: string) {
         try {
             const config = vscode.workspace.getConfiguration('programmingPractice');
-            
-            await config.update('aiApiKey', apiKey, vscode.ConfigurationTarget.Global);
-            await config.update('aiApiEndpoint', apiEndpoint, vscode.ConfigurationTarget.Global);
-            await config.update('aiModelName', modelName, vscode.ConfigurationTarget.Global);
-            
+
+            // 使用apiKey来存储API类型信息
+            // 如果是ollama类型，则设置apiKey为'ollama'
+            if (apiType === 'ollama') {
+                await config.update('aiApiKey', 'ollama', vscode.ConfigurationTarget.Global);
+                await config.update('aiApiEndpoint', 'http://localhost:11434/v1/', vscode.ConfigurationTarget.Global);
+                if (modelName === 'Qwen/Qwen2.5-Coder-7B-Instruct') {
+                    await config.update('aiModelName', 'qwen3:8b', vscode.ConfigurationTarget.Global);
+                } else {
+                    await config.update('aiModelName', modelName, vscode.ConfigurationTarget.Global);
+                }
+            } else {
+                // 自定义API
+                await config.update('aiApiKey', apiKey, vscode.ConfigurationTarget.Global);
+                await config.update('aiApiEndpoint', apiEndpoint, vscode.ConfigurationTarget.Global);
+                await config.update('aiModelName', modelName, vscode.ConfigurationTarget.Global);
+            }
+
             if (this.panel) {
                 this.panel.webview.postMessage({
                     command: 'configSaved'
                 });
             }
-            
+
             vscode.window.showInformationMessage('AI API 配置已保存');
         } catch (error) {
             vscode.window.showErrorMessage(`保存配置失败: ${error instanceof Error ? error.message : String(error)}`);
@@ -398,19 +495,20 @@ export class ApiConfigView {
     private async resetToDefault() {
         try {
             const config = vscode.workspace.getConfiguration('programmingPractice');
-            
+
             // 默认值
             const defaultApiKey = 'sk-jvemhtlzzpiaawbmveoqgzohziojbngggfrtvhtxxszyxzzy';
             const defaultEndpoint = 'https://api.siliconflow.cn/v1/chat/completions';
             const defaultModel = 'Qwen/Qwen2.5-Coder-7B-Instruct';
-            
+
             await config.update('aiApiKey', defaultApiKey, vscode.ConfigurationTarget.Global);
             await config.update('aiApiEndpoint', defaultEndpoint, vscode.ConfigurationTarget.Global);
             await config.update('aiModelName', defaultModel, vscode.ConfigurationTarget.Global);
-            
+
             if (this.panel) {
                 this.panel.webview.postMessage({
                     command: 'resetComplete',
+                    apiType: 'custom', // 默认为自定义API
                     apiKey: defaultApiKey,
                     apiEndpoint: defaultEndpoint,
                     modelName: defaultModel
@@ -424,15 +522,25 @@ export class ApiConfigView {
     /**
      * 测试API连接
      */
-    private async testConnection(apiKey: string, apiEndpoint: string, modelName: string) {
+    private async testConnection(apiType: string, apiKey: string, apiEndpoint: string, modelName: string) {
         if (!this.panel) return;
-        
+
         try {
             // 导入fetch
             const fetch = require('node-fetch');
-            
+
+            // 如果是ollama类型，确保使用正确的配置
+            if (apiType === 'ollama') {
+                apiKey = 'ollama';
+                apiEndpoint = 'http://localhost:11434/v1/';
+                if (!modelName || modelName === 'Qwen/Qwen2.5-Coder-7B-Instruct') {
+                    modelName = 'qwen3:8b';
+                }
+            }
+
             // 尝试连接API
-            const response = await fetch(apiEndpoint, {
+            const endpoint = apiEndpoint.endsWith('/') ? `${apiEndpoint}chat/completions` : `${apiEndpoint}/chat/completions`;
+            const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -457,7 +565,7 @@ export class ApiConfigView {
             }
 
             const data = await response.json();
-            
+
             // 发送成功消息
             this.panel.webview.postMessage({
                 command: 'testResult',

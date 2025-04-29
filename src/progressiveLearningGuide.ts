@@ -129,10 +129,14 @@ export class ProgressiveLearningGuide {
             const systemRole = this.getSystemRoleForStep(step);
 
             // 获取用户配置的API设置
-            const apiKey = vscode.workspace.getConfiguration('programmingPractice').get('aiApiKey', '');
-            const apiEndpoint = vscode.workspace.getConfiguration('programmingPractice').get('aiApiEndpoint', '');
-            const modelName = vscode.workspace.getConfiguration('programmingPractice').get('aiModelName', 'Qwen/Qwen2.5-Coder-7B-Instruct');
-            const serverUrl = vscode.workspace.getConfiguration('programmingPractice').get('serverUrl', 'http://localhost:3000');
+            const apiKey = vscode.workspace.getConfiguration('programmingPractice').get<string>('aiApiKey', '');
+            const apiEndpoint = vscode.workspace.getConfiguration('programmingPractice').get<string>('aiApiEndpoint', '');
+            const modelName = vscode.workspace.getConfiguration('programmingPractice').get<string>('aiModelName', 'Qwen/Qwen2.5-Coder-7B-Instruct');
+            const serverUrl = vscode.workspace.getConfiguration('programmingPractice').get<string>('serverUrl', 'http://localhost:3000');
+
+            // 根据apiKey判断API类型
+            const isOllama = apiKey && apiKey === 'ollama';
+            const apiType = isOllama ? 'ollama' : 'custom';
 
             // 首先尝试使用服务器API
             try {
@@ -146,7 +150,11 @@ export class ProgressiveLearningGuide {
                         prompt,
                         systemRole,
                         temperature: 0.3,
-                        maxTokens: 3000
+                        maxTokens: 3000,
+                        apiType,
+                        apiKey: apiType === 'ollama' ? 'ollama' : apiKey,
+                        apiEndpoint: apiType === 'ollama' ? 'http://localhost:11434/v1/' : apiEndpoint,
+                        modelName: apiType === 'ollama' ? 'qwen3:8b' : modelName
                     })
                 });
 
@@ -166,14 +174,18 @@ export class ProgressiveLearningGuide {
                 console.log('服务器API调用失败，使用直接API调用:', serverApiError);
 
                 // 使用直接API调用作为备用
-                const response = await fetch(apiEndpoint, {
+                const effectiveApiKey = apiType === 'ollama' ? 'ollama' : apiKey;
+                const effectiveApiEndpoint = apiType === 'ollama' ? 'http://localhost:11434/v1/chat/completions' : apiEndpoint;
+                const effectiveModelName = apiType === 'ollama' ? 'qwen3:8b' : modelName;
+
+                const response = await fetch(effectiveApiEndpoint, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${apiKey}`
+                        'Authorization': `Bearer ${effectiveApiKey}`
                     },
                     body: JSON.stringify({
-                        model: modelName,
+                        model: effectiveModelName,
                         messages: [
                             { "role": "system", "content": systemRole },
                             { "role": "user", "content": prompt }
@@ -247,10 +259,14 @@ export class ProgressiveLearningGuide {
             const systemRole = this.getSystemRoleForStep(step);
 
             // 获取用户配置的API设置
-            const serverUrl = vscode.workspace.getConfiguration('programmingPractice').get('serverUrl', 'http://localhost:3000');
-            const apiKey = vscode.workspace.getConfiguration('programmingPractice').get('aiApiKey', '');
-            const apiEndpoint = vscode.workspace.getConfiguration('programmingPractice').get('aiApiEndpoint', '');
-            const modelName = vscode.workspace.getConfiguration('programmingPractice').get('aiModelName', 'Qwen/Qwen2.5-Coder-7B-Instruct');
+            const serverUrl = vscode.workspace.getConfiguration('programmingPractice').get<string>('serverUrl', 'http://localhost:3000');
+            const apiKey = vscode.workspace.getConfiguration('programmingPractice').get<string>('aiApiKey', '');
+            const apiEndpoint = vscode.workspace.getConfiguration('programmingPractice').get<string>('aiApiEndpoint', '');
+            const modelName = vscode.workspace.getConfiguration('programmingPractice').get<string>('aiModelName', 'Qwen/Qwen2.5-Coder-7B-Instruct');
+
+            // 根据apiKey判断API类型
+            const isOllama = apiKey && apiKey === 'ollama';
+            const apiType = isOllama ? 'ollama' : 'custom';
 
             // 调用流式API
             const pluginApiUrl = `${serverUrl}/api/plugin/progressive-guide/stream`;
@@ -264,9 +280,10 @@ export class ProgressiveLearningGuide {
                     systemRole,
                     temperature: 0.3,
                     maxTokens: 3000,
-                    apiKey,
-                    apiEndpoint,
-                    modelName
+                    apiType,
+                    apiKey: apiType === 'ollama' ? 'ollama' : apiKey,
+                    apiEndpoint: apiType === 'ollama' ? 'http://localhost:11434/v1/' : apiEndpoint,
+                    modelName: apiType === 'ollama' ? 'qwen3:8b' : modelName
                 })
             });
 
