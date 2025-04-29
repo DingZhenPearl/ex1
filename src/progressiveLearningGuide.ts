@@ -38,8 +38,6 @@ export class ProgressiveLearningGuide {
     private learningProgressMap: Map<string, LearningProgress> = new Map();
     // 添加缓存Map来存储每个问题ID和步骤类型对应的内容
     private contentCache: Map<string, Map<GuideStepType, string>> = new Map();
-    // 服务器API基础URL
-    private apiBaseUrl: string = 'http://localhost:3000/api/plugin';
 
     private constructor() {
         this.aiAnalyzer = AICodeAnalyzer.getInstance();
@@ -130,36 +128,73 @@ export class ProgressiveLearningGuide {
             // 设置不同步骤的系统角色描述
             const systemRole = this.getSystemRoleForStep(step);
 
-            // 调用服务器API获取指导内容（非流式）
-            const response = await fetch(`${this.apiBaseUrl}/progressive-guide`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    prompt,
-                    systemRole,
-                    temperature: 0.3,
-                    maxTokens: 3000
-                })
-            });
+            // 获取用户配置的API设置
+            const apiKey = vscode.workspace.getConfiguration('programmingPractice').get('aiApiKey', '');
+            const apiEndpoint = vscode.workspace.getConfiguration('programmingPractice').get('aiApiEndpoint', '');
+            const modelName = vscode.workspace.getConfiguration('programmingPractice').get('aiModelName', 'Qwen/Qwen2.5-Coder-7B-Instruct');
+            const serverUrl = vscode.workspace.getConfiguration('programmingPractice').get('serverUrl', 'http://localhost:3000');
 
-            if (!response.ok) {
-                throw new Error(`服务器响应错误: ${response.status} ${response.statusText}`);
+            // 首先尝试使用服务器API
+            try {
+                const pluginApiUrl = `${serverUrl}/api/plugin/progressive-guide`;
+                const response = await fetch(pluginApiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        prompt,
+                        systemRole,
+                        temperature: 0.3,
+                        maxTokens: 3000
+                    })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success) {
+                        const content = data.content;
+                        // 缓存获取的内容
+                        this.setCachedContent(problemId, step, content);
+                        return content;
+                    }
+                }
+
+                // 如果服务器API调用失败，抛出错误以触发备用方法
+                throw new Error('服务器API调用失败，将使用直接API调用');
+            } catch (serverApiError) {
+                console.log('服务器API调用失败，使用直接API调用:', serverApiError);
+
+                // 使用直接API调用作为备用
+                const response = await fetch(apiEndpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${apiKey}`
+                    },
+                    body: JSON.stringify({
+                        model: modelName,
+                        messages: [
+                            { "role": "system", "content": systemRole },
+                            { "role": "user", "content": prompt }
+                        ],
+                        temperature: 0.3,
+                        max_tokens: 3000
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`API响应错误: ${response.status} ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                const content = data.choices[0].message.content;
+
+                // 缓存获取的内容
+                this.setCachedContent(problemId, step, content);
+
+                return content;
             }
-
-            const data = await response.json();
-
-            if (!data.success) {
-                throw new Error(data.error || '未知错误');
-            }
-
-            const content = data.content;
-
-            // 缓存获取的内容
-            this.setCachedContent(problemId, step, content);
-
-            return content;
         } catch (error) {
             console.error(`获取${step}指导内容失败:`, error);
 
@@ -211,8 +246,15 @@ export class ProgressiveLearningGuide {
             // 设置不同步骤的系统角色描述
             const systemRole = this.getSystemRoleForStep(step);
 
+            // 获取用户配置的API设置
+            const serverUrl = vscode.workspace.getConfiguration('programmingPractice').get('serverUrl', 'http://localhost:3000');
+            const apiKey = vscode.workspace.getConfiguration('programmingPractice').get('aiApiKey', '');
+            const apiEndpoint = vscode.workspace.getConfiguration('programmingPractice').get('aiApiEndpoint', '');
+            const modelName = vscode.workspace.getConfiguration('programmingPractice').get('aiModelName', 'Qwen/Qwen2.5-Coder-7B-Instruct');
+
             // 调用流式API
-            const response = await fetch(`${this.apiBaseUrl}/progressive-guide/stream`, {
+            const pluginApiUrl = `${serverUrl}/api/plugin/progressive-guide/stream`;
+            const response = await fetch(pluginApiUrl, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -221,7 +263,10 @@ export class ProgressiveLearningGuide {
                     prompt,
                     systemRole,
                     temperature: 0.3,
-                    maxTokens: 3000
+                    maxTokens: 3000,
+                    apiKey,
+                    apiEndpoint,
+                    modelName
                 })
             });
 
@@ -230,64 +275,72 @@ export class ProgressiveLearningGuide {
             }
 
             // 处理流式响应
-            let fullContent = '';
+            try {
+                let fullContent = '';
+                let buffer = '';
 
-            // 设置响应处理器
-            response.body.on('data', (chunk: Buffer) => {
-                // 解码收到的数据
-                const chunkText = chunk.toString('utf-8');
+                // 设置响应处理器
+                response.body.on('data', (chunk: Buffer) => {
+                    // 解码收到的数据
+                    const chunkText = chunk.toString('utf-8');
+                    buffer += chunkText;
 
-                // 处理SSE格式的数据
-                const lines = chunkText.split('\n\n');
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        try {
-                            const data = JSON.parse(line.substring(6));
+                    // 处理完整的SSE消息
+                    const messages = buffer.split('\n\n');
+                    buffer = messages.pop() || ''; // 保留最后一个可能不完整的消息
 
-                            if (data.error) {
-                                throw new Error(data.error);
-                            }
+                    for (const message of messages) {
+                        if (message.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(message.substring(6));
 
-                            if (data.token) {
-                                fullContent += data.token;
-                                callback(fullContent, false);
-                            }
-
-                            if (data.done) {
-                                // 如果服务器返回了完整响应，使用它
-                                if (data.fullResponse) {
-                                    fullContent = data.fullResponse;
+                                if (data.error) {
+                                    throw new Error(data.error);
                                 }
 
-                                // 缓存完整内容
-                                this.setCachedContent(problemId, step, fullContent);
-                                callback(fullContent, true);
+                                if (data.token) {
+                                    fullContent += data.token;
+                                    callback(fullContent, false);
+                                }
+
+                                if (data.done) {
+                                    // 如果服务器返回了完整响应，使用它
+                                    if (data.fullResponse) {
+                                        fullContent = data.fullResponse;
+                                    }
+
+                                    // 缓存完整内容
+                                    this.setCachedContent(problemId, step, fullContent);
+                                    callback(fullContent, true);
+                                }
+                            } catch (parseError) {
+                                console.error('解析SSE数据失败:', parseError, message.substring(6));
                             }
-                        } catch (parseError) {
-                            console.error('解析SSE数据失败:', parseError);
                         }
                     }
-                }
-            });
+                });
 
-            // 处理流结束
-            response.body.on('end', () => {
-                // 流结束但没有收到完成信号
-                if (fullContent) {
-                    this.setCachedContent(problemId, step, fullContent);
-                    callback(fullContent, true);
-                }
-            });
+                // 处理流结束
+                response.body.on('end', () => {
+                    // 流结束但没有收到完成信号
+                    if (fullContent) {
+                        this.setCachedContent(problemId, step, fullContent);
+                        callback(fullContent, true);
+                    }
+                });
 
-            // 处理错误
-            response.body.on('error', (err) => {
-                console.error('流读取错误:', err);
-                callback(`流读取错误: ${err.message}`, true);
-            });
+                // 处理错误
+                response.body.on('error', (err: Error) => {
+                    console.error('流读取错误:', err);
+                    callback(`流读取错误: ${err.message}`, true);
+                });
 
-            // 缓存完整内容
-            if (fullContent) {
-                this.setCachedContent(problemId, step, fullContent);
+            } catch (streamError: unknown) {
+                console.error('流处理错误:', streamError);
+                const errorMessage = streamError instanceof Error
+                    ? streamError.message
+                    : '未知错误';
+                callback(`流处理错误: ${errorMessage}`, true);
             }
 
         } catch (error) {
