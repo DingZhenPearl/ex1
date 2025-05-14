@@ -190,7 +190,7 @@
         },
         "programmingPractice.aiApiEndpoint": {
           "type": "string",
-          "default": "https://api.siliconflow.cn/v1/chat/completions",
+          "default": "https://api.siliconflow.cn/v1/",
           "description": "AI大模型API终端点（基座地址）"
         },
         "programmingPractice.aiModelName": {

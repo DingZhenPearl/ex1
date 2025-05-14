@@ -32,7 +32,7 @@ export class AICodeAnalyzer {
     public initialize(context: vscode.ExtensionContext) {
         // 注册状态栏项
         this.initializeStatusBar(context);
-        
+
         // 注册文档变更事件
         context.subscriptions.push(
             vscode.workspace.onDidChangeTextDocument(this.onDocumentChanged.bind(this)),
@@ -108,10 +108,10 @@ export class AICodeAnalyzer {
         if (this.analysisTimeout) {
             clearTimeout(this.analysisTimeout);
         }
-        
+
         // 检查配置的延迟时间 - 默认为1500ms以避免过于频繁的API调用
         const delay = vscode.workspace.getConfiguration('programmingPractice').get('aiAnalysisDelayMs', 1500);
-        
+
         // 安排新的分析任务
         this.analysisTimeout = setTimeout(async () => {
             await this.analyzeDocument(document);
@@ -161,7 +161,7 @@ export class AICodeAnalyzer {
         // 检查API调用频率限制
         const now = Date.now();
         const minInterval = vscode.workspace.getConfiguration('programmingPractice').get('aiApiMinIntervalMs', 2000);
-        
+
         if (now - this.lastRequestTime < minInterval) {
             // 需要等待以满足频率限制
             const delay = minInterval - (now - this.lastRequestTime);
@@ -169,17 +169,17 @@ export class AICodeAnalyzer {
         }
 
         const request = this.requestQueue.shift()!;
-        
+
         try {
             // 记录请求时间
             this.lastRequestTime = Date.now();
-            
+
             // 执行AI分析
             const diagnostics = await this.callAIModelForAnalysis(request.document);
-            
+
             // 更新诊断信息
             this.diagnosticCollection.set(request.document.uri, diagnostics);
-            
+
             // 解析Promise
             request.resolve(diagnostics);
         } catch (error) {
@@ -219,12 +219,15 @@ export class AICodeAnalyzer {
             }, async () => {
                 // 准备API请求
                 const prompt = this.buildAnalysisPrompt(code, language);
-                
+
                 // 添加重试逻辑
                 let retries = 3;
                 while (retries > 0) {
                     try {
-                        const response = await fetch(apiEndpoint, {
+                        // 确保API端点包含chat/completions路径
+                        const endpoint = apiEndpoint.endsWith('/') ? `${apiEndpoint}chat/completions` : `${apiEndpoint}/chat/completions`;
+
+                        const response = await fetch(endpoint, {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
@@ -252,7 +255,7 @@ export class AICodeAnalyzer {
 
                         const data = await response.json();
                         const analysisResult = data.choices[0].message.content;
-                        
+
                         // 解析AI返回结果为诊断信息
                         return this.parseAnalysisResult(analysisResult, document);
                     } catch (error) {
@@ -264,7 +267,7 @@ export class AICodeAnalyzer {
                         await new Promise(resolve => setTimeout(resolve, 2000));
                     }
                 }
-                
+
                 // 确保始终返回一个诊断数组，即使所有重试都失败
                 return [] as vscode.Diagnostic[];
             }) || []; // 确保如果withProgress返回undefined，我们返回一个空数组
@@ -317,7 +320,7 @@ ${code}
      */
     private parseAnalysisResult(result: string, document: vscode.TextDocument): vscode.Diagnostic[] {
         const diagnostics: vscode.Diagnostic[] = [];
-        
+
         try {
             // 尝试从结果中提取JSON
             const jsonMatch = result.match(/\[[\s\S]*\]/);
@@ -325,14 +328,14 @@ ${code}
                 console.warn('无法从AI响应中提取JSON数据');
                 return [];
             }
-            
+
             const issuesJson = JSON.parse(jsonMatch[0]);
-            
+
             for (const issue of issuesJson) {
                 // 确保行号是基于0的索引
                 const lineNumber = Math.max(0, (issue.line || 1) - 1);
                 const lineText = document.lineAt(Math.min(lineNumber, document.lineCount - 1)).text;
-                
+
                 // 创建诊断范围 - 使用整行或特定部分
                 let range: vscode.Range;
                 if (issue.column && issue.endColumn) {
@@ -346,7 +349,7 @@ ${code}
                         lineNumber, lineText.length
                     );
                 }
-                
+
                 // 修改：将错误级别降低为警告级别
                 let severity: vscode.DiagnosticSeverity;
                 switch (issue.severity?.toLowerCase()) {
@@ -367,18 +370,18 @@ ${code}
                     default:
                         severity = vscode.DiagnosticSeverity.Information;
                 }
-                
+
                 // 创建诊断信息
                 const diagnostic = new vscode.Diagnostic(
                     range,
                     issue.message,
                     severity
                 );
-                
+
                 // 添加代码和源
                 diagnostic.code = issue.code || 'AI.Analysis';
                 diagnostic.source = '🤖 AI代码分析 (仅警告)';
-                
+
                 // 添加建议作为相关信息
                 if (issue.suggestion) {
                     diagnostic.relatedInformation = [
@@ -388,14 +391,14 @@ ${code}
                         )
                     ];
                 }
-                
+
                 diagnostics.push(diagnostic);
             }
         } catch (error) {
             console.error('解析AI分析结果失败:', error, '原始结果:', result);
             vscode.window.showErrorMessage('解析AI分析结果失败，请查看日志获取详细信息');
         }
-        
+
         return diagnostics;
     }
 
@@ -423,7 +426,7 @@ ${code}
         try {
             // 提取建议内容
             const suggestionText = suggestion.startsWith('建议:') ? suggestion.substring(3).trim() : suggestion.trim();
-            
+
             // 使用AI来生成具体的修复代码
             vscode.window.withProgress({
                 location: vscode.ProgressLocation.Notification,
@@ -432,11 +435,11 @@ ${code}
             }, async () => {
                 const apiKey = vscode.workspace.getConfiguration('programmingPractice').get('aiApiKey', '');
                 const apiEndpoint = vscode.workspace.getConfiguration('programmingPractice').get('aiApiEndpoint', '');
-                
+
                 // 使用整个文件作为上下文，而不仅仅是问题行周围的代码
                 const entireFileContent = document.getText();
                 const lineNumber = diagnostic.range.start.line;
-                
+
                 // 创建带有问题行标记的完整文件内容
                 let markedFileContent = '';
                 for (let i = 0; i < document.lineCount; i++) {
@@ -447,7 +450,7 @@ ${code}
                         markedFileContent += `  ${line}\n`;
                     }
                 }
-                
+
                 // 改进提示词，明确指示只需要返回修改部分的代码
                 const prompt = `我需要修复以下C++代码中的问题。问题描述是: "${diagnostic.message}"。建议修复方法是: "${suggestionText}"。
 
@@ -458,7 +461,7 @@ ${markedFileContent}
 \`\`\`
 
 请提供修复后的代码片段，确保语法正确且完整，与整个文件的其余部分保持一致。`;
-                
+
                 try {
                     // 延迟以尊重API速率限制
                     const now = Date.now();
@@ -466,12 +469,15 @@ ${markedFileContent}
                     if (now - this.lastRequestTime < minInterval) {
                         await new Promise(resolve => setTimeout(resolve, minInterval - (now - this.lastRequestTime)));
                     }
-                    
+
                     // 记录请求时间
                     this.lastRequestTime = Date.now();
-                    
+
+                    // 确保API端点包含chat/completions路径
+                    const endpoint = apiEndpoint.endsWith('/') ? `${apiEndpoint}chat/completions` : `${apiEndpoint}/chat/completions`;
+
                     // 调用API获取修复建议
-                    const response = await fetch(apiEndpoint, {
+                    const response = await fetch(endpoint, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -480,9 +486,9 @@ ${markedFileContent}
                         body: JSON.stringify({
                             model: vscode.workspace.getConfiguration('programmingPractice').get('aiModelName', 'lite'),
                             messages: [
-                                { 
-                                    "role": "system", 
-                                    "content": "你是一个C++代码修复专家。请根据整个文件的上下文提供精确的修复代码。确保修复与周围代码风格一致，并保持代码的整体结构和语义。" 
+                                {
+                                    "role": "system",
+                                    "content": "你是一个C++代码修复专家。请根据整个文件的上下文提供精确的修复代码。确保修复与周围代码风格一致，并保持代码的整体结构和语义。"
                                 },
                                 { "role": "user", "content": prompt }
                             ],
@@ -497,11 +503,11 @@ ${markedFileContent}
 
                     const data = await response.json();
                     const fixSuggestion = data.choices[0].message.content;
-                    
+
                     // 提取代码片段并进行验证
                     let fixedCode = '';
                     const codeMatch = fixSuggestion.match(/```(?:cpp)?\s*([\s\S]*?)\s*```/);
-                    
+
                     if (codeMatch) {
                         // 从代码块中提取
                         fixedCode = codeMatch[1].trim();
@@ -509,10 +515,10 @@ ${markedFileContent}
                         // 如果没有代码块标记，尝试提取整个响应
                         fixedCode = fixSuggestion.trim();
                     }
-                    
+
                     // 增加代码验证和修复逻辑
                     fixedCode = this.validateAndFixCode(fixedCode);
-                    
+
                     // 创建一个新的Webview来显示修复建议，增加代码预览的高度
                     const panel = vscode.window.createWebviewPanel(
                         'aiCodeFix',
@@ -520,9 +526,9 @@ ${markedFileContent}
                         vscode.ViewColumn.Beside,
                         { enableScripts: true }
                     );
-                    
+
                     panel.webview.html = this.getFixSuggestionHtml(diagnostic.message, suggestionText, fixedCode);
-                    
+
                     // 处理webview消息
                     panel.webview.onDidReceiveMessage(async message => {
                         if (message.command === 'copyCode') {
@@ -533,7 +539,7 @@ ${markedFileContent}
                             panel.dispose();
                         }
                     });
-                    
+
                 } catch (error) {
                     vscode.window.showErrorMessage(`获取AI修复建议失败: ${error instanceof Error ? error.message : String(error)}`);
                 }
@@ -636,28 +642,28 @@ ${markedFileContent}
         <body>
             <div class="title">代码问题:</div>
             <div class="problem">${problemMessage}</div>
-            
+
             <div class="title">建议修复:</div>
             <div class="suggestion">${suggestion}</div>
-            
+
             <div class="info-text">请手动复制下面的修复代码并在编辑器中应用:</div>
-            
+
             <div class="title">AI生成的修复代码:</div>
             <div class="editor-container">
                 <textarea id="codeEditor" spellcheck="false">${fixedCode}</textarea>
             </div>
-            
+
             <div class="button-container">
                 <button id="closeButton">关闭</button>
                 <button id="copyButton">复制代码</button>
             </div>
-            
+
             <script>
                 const vscode = acquireVsCodeApi();
-                
+
                 // 允许用户编辑生成的代码
                 const editor = document.getElementById('codeEditor');
-                
+
                 // 复制按钮点击事件
                 document.getElementById('copyButton').addEventListener('click', () => {
                     const code = editor.value;
@@ -666,18 +672,18 @@ ${markedFileContent}
                         code: code
                     });
                 });
-                
+
                 // 关闭按钮点击事件
                 document.getElementById('closeButton').addEventListener('click', () => {
                     vscode.postMessage({ command: 'close' });
                 });
-                
+
                 // 自动调整文本区域大小以适应内容
                 function adjustTextareaHeight() {
                     editor.style.height = 'auto';
                     editor.style.height = Math.min(400, editor.scrollHeight) + 'px';
                 }
-                
+
                 // 初始调整和输入时调整
                 adjustTextareaHeight();
                 editor.addEventListener('input', adjustTextareaHeight);
@@ -693,40 +699,40 @@ ${markedFileContent}
         if (!code) {
             return code;
         }
-        
+
         // 修复常见的不完整代码问题
         let fixedCode = code;
-        
+
         // 1. 修复不完整的include语句
         const incompleteInclude = fixedCode.match(/#include\s*$/m);
         if (incompleteInclude) {
             fixedCode = fixedCode.replace(/#include\s*$/m, '#include <iostream>');
         }
-        
+
         // 2. 修复不完整的cout语句
         fixedCode = fixedCode.replace(/cout\s*<<\s*["'](.+?)["']\s*<$/gm, 'cout << "$1" << endl;');
-        
+
         // 3. 检查是否有不匹配的括号
         const openBraces = (fixedCode.match(/{/g) || []).length;
         const closeBraces = (fixedCode.match(/}/g) || []).length;
-        
+
         if (openBraces > closeBraces) {
             // 添加缺少的右花括号
             for (let i = 0; i < openBraces - closeBraces; i++) {
                 fixedCode += '\n}';
             }
         }
-        
+
         // 4. 检查语句末尾的分号
         const lines = fixedCode.split('\n');
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i].trim();
             // 如果行以字母、数字、右括号、引号或右中括号结束，但没有分号，添加分号
-            if (line && 
-                !line.endsWith(';') && 
-                !line.endsWith('{') && 
-                !line.endsWith('}') && 
-                !line.endsWith(':') && 
+            if (line &&
+                !line.endsWith(';') &&
+                !line.endsWith('{') &&
+                !line.endsWith('}') &&
+                !line.endsWith(':') &&
                 !line.match(/^\s*#/) && // 不是预处理指令
                 !line.match(/^\s*\/\//) && // 不是注释
                 line.match(/[a-zA-Z0-9"'\])]$/)) {
@@ -734,7 +740,7 @@ ${markedFileContent}
             }
         }
         fixedCode = lines.join('\n');
-        
+
         // 5. 确保main函数有返回语句
         if (fixedCode.includes('int main(') && !fixedCode.includes('return 0;')) {
             // 查找最后一个右花括号的位置
@@ -743,7 +749,7 @@ ${markedFileContent}
                 fixedCode = fixedCode.slice(0, lastBraceIndex) + '\n    return 0;\n' + fixedCode.slice(lastBraceIndex);
             }
         }
-        
+
         return fixedCode;
     }
 
@@ -759,11 +765,11 @@ ${markedFileContent}
             }, async () => {
                 const apiKey = vscode.workspace.getConfiguration('programmingPractice').get('aiApiKey', '');
                 const apiEndpoint = vscode.workspace.getConfiguration('programmingPractice').get('aiApiEndpoint', '');
-                
+
                 // 使用整个文件作为上下文
                 const entireFileContent = document.getText();
                 const lineNumber = diagnostic.range.start.line;
-                
+
                 // 创建带有问题行标记的完整文件内容
                 let markedFileContent = '';
                 for (let i = 0; i < document.lineCount; i++) {
@@ -774,9 +780,9 @@ ${markedFileContent}
                         markedFileContent += `  ${line}\n`;
                     }
                 }
-                
+
                 const prompt = `请详细解释以下C++代码中的问题并提供多种解决方案。问题描述是: "${diagnostic.message}"。
-                
+
 我正在提供整个文件的源代码，问题行用→标记。请分析整个文件上下文来更全面地理解问题。
 
 代码:
@@ -789,7 +795,7 @@ ${markedFileContent}
 2. 此问题如何影响整个程序的运行
 3. 至少两种不同的修复方案，并解释每种方案的优缺点
 4. 可能的最佳实践和相关C++知识点`;
-                
+
                 try {
                     // 延迟以尊重API速率限制
                     const now = Date.now();
@@ -797,12 +803,15 @@ ${markedFileContent}
                     if (now - this.lastRequestTime < minInterval) {
                         await new Promise(resolve => setTimeout(resolve, minInterval - (now - this.lastRequestTime)));
                     }
-                    
+
                     // 记录请求时间
                     this.lastRequestTime = Date.now();
-                    
+
+                    // 确保API端点包含chat/completions路径
+                    const endpoint = apiEndpoint.endsWith('/') ? `${apiEndpoint}chat/completions` : `${apiEndpoint}/chat/completions`;
+
                     // 调用API获取帮助内容
-                    const response = await fetch(apiEndpoint, {
+                    const response = await fetch(endpoint, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -825,20 +834,20 @@ ${markedFileContent}
 
                     const data = await response.json();
                     const helpContent = data.choices[0].message.content;
-                    
+
                     // 创建一个新的Webview来显示详细帮助
                     const panel = vscode.window.createWebviewPanel(
                         'aiCodeHelp',
                         'AI代码问题详解',
                         vscode.ViewColumn.Beside,
-                        { 
+                        {
                             enableScripts: true,
                             enableCommandUris: true
                         }
                     );
-                    
+
                     panel.webview.html = this.getAdditionalHelpHtml(diagnostic.message, helpContent);
-                    
+
                 } catch (error) {
                     vscode.window.showErrorMessage(`获取AI帮助失败: ${error instanceof Error ? error.message : String(error)}`);
                 }
@@ -920,11 +929,11 @@ ${markedFileContent}
         </head>
         <body>
             <div class="title">AI代码问题详解</div>
-            
+
             <div class="problem">
                 <strong>问题:</strong> ${problemMessage}
             </div>
-            
+
             <div class="help-content">
                 ${formattedContent}
             </div>
@@ -948,27 +957,30 @@ ${markedFileContent}
         }
 
         const apiEndpoint = vscode.workspace.getConfiguration('programmingPractice').get('aiApiEndpoint', '');
-        
+
         // 检查API调用频率限制
         const now = Date.now();
         const minInterval = vscode.workspace.getConfiguration('programmingPractice').get('aiApiMinIntervalMs', 2000);
-        
+
         if (now - this.lastRequestTime < minInterval) {
             // 需要等待以满足频率限制
             const delay = minInterval - (now - this.lastRequestTime);
             await new Promise(resolve => setTimeout(resolve, delay));
         }
-        
+
         // 记录请求时间
         this.lastRequestTime = Date.now();
-        
+
         // 添加重试逻辑
         let retries = 3;
         let lastError: Error | null = null;
-        
+
         while (retries > 0) {
             try {
-                const response = await fetch(apiEndpoint, {
+                // 确保API端点包含chat/completions路径
+                const endpoint = apiEndpoint.endsWith('/') ? `${apiEndpoint}chat/completions` : `${apiEndpoint}/chat/completions`;
+
+                const response = await fetch(endpoint, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -995,7 +1007,7 @@ ${markedFileContent}
             } catch (error) {
                 retries--;
                 lastError = error instanceof Error ? error : new Error(String(error));
-                
+
                 if (retries === 0) {
                     throw lastError;
                 }
@@ -1003,7 +1015,7 @@ ${markedFileContent}
                 await new Promise(resolve => setTimeout(resolve, 2000));
             }
         }
-        
+
         // 如果所有重试都失败
         throw new Error('API调用失败，已达到最大重试次数');
     }
@@ -1024,10 +1036,10 @@ ${markedFileContent}
             }, async () => {
                 // 获取问题的代码模板或默认模板
                 const codeTemplate = await this.getProblemTemplate(problemId);
-                
+
                 // 构建更详细的提示
                 const prompt = `请为以下C++编程题目生成完整的解答代码：
-                
+
 问题ID: ${problemId}
 
 问题描述:
@@ -1051,25 +1063,25 @@ ${codeTemplate}
                         0.2,
                         4000  // 增加令牌限制，允许生成更长的代码
                     );
-                    
+
                     // 改进代码提取逻辑
                     let extractedCode: string;
                     const codeBlockMatch = solution.match(/```(?:cpp|c\+\+)?\s*([\s\S]*?)\s*```/);
-                    
+
                     if (codeBlockMatch) {
                         // 从代码块中提取
                         extractedCode = codeBlockMatch[1].trim();
                     } else {
                         // 如果没有代码块标记，尝试识别代码部分
                         const lines = solution.split('\n');
-                        const codeLines = lines.filter(line => 
+                        const codeLines = lines.filter(line =>
                             !line.startsWith('#') && // 不是Markdown标题
                             !line.match(/^[A-Za-z][\w\s]+:/) && // 不是标签行
                             !line.match(/^(\d+\.|\*|\-)\s/) // 不是列表项
                         );
                         extractedCode = codeLines.join('\n').trim();
                     }
-                    
+
                     // 验证提取的代码是否看起来像有效的C++代码
                     if (!this.looksLikeCppCode(extractedCode)) {
                         console.log('生成的内容不像有效的C++代码，尝试重新提取');
@@ -1082,12 +1094,12 @@ ${codeTemplate}
                             }
                         }
                     }
-                    
+
                     // 如果代码仍然为空或太短，返回整个响应
                     if (!extractedCode || extractedCode.length < 50) {
                         return solution.trim();
                     }
-                    
+
                     return extractedCode;
                 } catch (error) {
                     vscode.window.showErrorMessage(`生成解答失败: ${error instanceof Error ? error.message : String(error)}`);
@@ -1100,7 +1112,7 @@ ${codeTemplate}
             return undefined;
         }
     }
-    
+
     /**
      * 检查文本是否看起来像有效的C++代码
      */
@@ -1110,11 +1122,11 @@ ${codeTemplate}
         const hasMainFunction = /\bint\s+main\s*\(/.test(text);
         const hasTypicalSyntax = /\b(if|for|while|return|void|int|string|vector)\b/.test(text);
         const hasCurlyBraces = /{/.test(text) && /}/.test(text);
-        
+
         // 至少满足部分条件
         return (hasInclude || hasMainFunction) && hasTypicalSyntax && hasCurlyBraces;
     }
-    
+
     /**
      * 获取指定问题ID的代码模板
      */
@@ -1131,25 +1143,25 @@ int main() {
     // 读取输入数组和目标值
     vector<int> nums;
     int num, target;
-    
+
     // 读取所有输入数字，直到EOF
     while (cin >> num) {
         nums.push_back(num);
     }
-    
+
     // 最后一个数字是目标和
     if (!nums.empty()) {
         target = nums.back();
         nums.pop_back();  // 从数组中移除目标和
     }
-    
+
     // TODO: 在这里实现你的解决方案
     // 要求：找到两个数的和等于target，返回它们的下标
-    
+
     // 输出结果
     json result = json::array({0, 1});  // 替换成实际找到的下标
     cout << result << endl;
-    
+
     return 0;
 }`,
             '2': `#include <iostream>
@@ -1159,17 +1171,17 @@ using namespace std;
 int main() {
     int x;
     cin >> x;
-    
+
     // TODO: 在这里实现你的解决方案
     // 要求：判断x是否为回文数
-    
+
     // 输出结果
     cout << "true" << endl;  // 或 cout << "false" << endl;
-    
+
     return 0;
 }`,
         };
-        
+
         return templates[problemId];
     }
 }
@@ -1180,7 +1192,7 @@ int main() {
 class AICodeActionProvider implements vscode.CodeActionProvider {
     provideCodeActions(document: vscode.TextDocument, range: vscode.Range, context: vscode.CodeActionContext): vscode.CodeAction[] | undefined {
         const actions: vscode.CodeAction[] = [];
-        
+
         // 为每个AI分析产生的诊断信息提供代码操作
         for (const diagnostic of context.diagnostics) {
             // 检查是否是AI分析生成的诊断信息 - 更新为匹配新的诊断源标识
@@ -1195,18 +1207,18 @@ class AICodeActionProvider implements vscode.CodeActionProvider {
                             vscode.CodeActionKind.QuickFix
                         );
                         action.diagnostics = [diagnostic];
-                        
+
                         // 添加执行命令
                         action.command = {
                             command: 'programmingPractice.requestAIFix',
                             title: '应用AI建议',
                             arguments: [document, diagnostic, suggestion]
                         };
-                        
+
                         actions.push(action);
                     }
                 }
-                
+
                 // 添加一个操作来请求更多帮助
                 const helpAction = new vscode.CodeAction(
                     '获取更多帮助这个问题',
@@ -1218,11 +1230,11 @@ class AICodeActionProvider implements vscode.CodeActionProvider {
                     title: '获取更多帮助',
                     arguments: [document, diagnostic]
                 };
-                
+
                 actions.push(helpAction);
             }
         }
-        
+
         return actions;
     }
 }

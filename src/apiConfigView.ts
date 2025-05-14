@@ -498,7 +498,7 @@ export class ApiConfigView {
 
             // 默认值
             const defaultApiKey = 'sk-jvemhtlzzpiaawbmveoqgzohziojbngggfrtvhtxxszyxzzy';
-            const defaultEndpoint = 'https://api.siliconflow.cn/v1/chat/completions';
+            const defaultEndpoint = 'https://api.siliconflow.cn/v1/';
             const defaultModel = 'Qwen/Qwen2.5-Coder-7B-Instruct';
 
             await config.update('aiApiKey', defaultApiKey, vscode.ConfigurationTarget.Global);
